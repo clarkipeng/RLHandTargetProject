@@ -4,7 +4,6 @@ using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
 using System.Collections.Generic;
 using UnityEngine;
-using static MotionMatchingAnimator.Bones;
 using UnityEditor;
 using System.Text;
 using Cinemachine;
@@ -13,7 +12,6 @@ public struct CharInfo
 {
     public Transform[]  boneToTransform;
     public GameObject[] boneToCollider;
-    public MotionMatchingAnimator MMScript;
     public GameObject charObj;
     public Transform  trans;
     public ArticulationBody root;
@@ -35,28 +33,37 @@ public struct CharInfo
         // From DreCon paper, contains: 
         // { LeftToe, RightToe, Spine, Head, LeftForeArm, RightForeArm },
         // we compute positions and velocities then concatenate these
-        boneState = new float[36];
+        boneState = new float[6*11 + 9];
+    }
+    public CharInfo(CharInfo other) : this()
+    {
+        boneToTransform = (Transform[]) other.boneToTransform.Clone();
+        root = other.root;
+        trans = other.trans;
+
+        boneSurfacePts = (Vector3[][]) other.boneSurfacePts.Clone();
+        boneSurfacePtsWorldSpace = (Vector3[][]) other.boneSurfacePtsWorldSpace.Clone();
+        boneSurfaceVels = (Vector3[][]) other.boneSurfaceVels.Clone();
+        boneWorldPos = (Vector3[]) other.boneWorldPos.Clone();
+        boneToCollider = (GameObject[]) other.boneToCollider.Clone();
+        boneState = (float[]) other.boneState.Clone();
     }
 }
 public class MLAgent : Agent
 {
     private ConfigManager _config;
     private SixtyFPSSyncOracle _sixtyFPSSyncOracle;
-    CharInfo kinChar, simChar;
-    GameObject kinematicCharObj;
-    internal GameObject simulatedCharObj;
+    CharInfo simChar, defaultChar;
+
+    GameObject CharObj;
 
     public BoxCollider groundCollider;
-    private float groundColliderY = 0f;
-    private float toeColliderRadius = 0f;
-    public GameObject simulated_char_type2_prefab;
-    public GameObject kinematic_char_type2_prefab;
-    public GameObject simulated_handmade_char_prefab;
-    public GameObject kinematic_handmade_char_prefab;
+    private float groundColliderY = -20f;
+    // private float toeColliderRadius = 0f;
+    public GameObject simulated_prefab;
     public int reportMeanRewardEveryNSteps = 10000;
-    internal MotionMatchingAnimator MMScript;
-    private SimCharController SimCharController;
-    private int nbodies;
+    private SimCharController SimulationCharController;
+    public static int nbodies = 12;
     private int curFixedUpdate = -1;
     private int lastSimCharTeleportFixedUpdate = -1;
 
@@ -64,40 +71,61 @@ public class MLAgent : Agent
     float[] smoothedActions;
     int numActions;
     int numObservations;
-    MocapDB motionDB;
+    // MocapDB motionDB;
     public bool kinUseDebugMats = false;
     public bool simUseDebugMats = false;
     public CinemachineVirtualCamera thirdPersonCam;
 
     private Vector3 lastKinRootPos = Vector3.zero;
 
+    public enum Bones
+    {
+        Bone_Shoulder = 0,
+        Bone_UpperArm = 1,
+        Bone_LowerArm = 2,
+        Bone_Palm = 3,
+        Bone_Thumb1 = 4,
+        Bone_Thumb2 = 5,
+        Bone_FingerIndex1 = 6,
+        Bone_FingerIndex2 = 7,
+        Bone_FingerMiddle1 = 8,
+        Bone_FingerMiddle2 = 9,
+        Bone_FingerPinky1 = 10,
+        Bone_FingerPinky2 = 11,
+    };
+    internal Quaternion[] bone_rotations = new Quaternion[nbodies];
+
     [HideInInspector]
-    public static MotionMatchingAnimator.Bones[] stateBones = new MotionMatchingAnimator.Bones[]
-    {  Bone_LeftToe, Bone_RightToe, Bone_Spine, Bone_Head, Bone_LeftForeArm, Bone_RightForeArm };
+    public static Bones[] stateBones = new Bones[]
+    {  Bones.Bone_UpperArm, Bones.Bone_LowerArm, Bones.Bone_Palm, Bones.Bone_Thumb1, Bones.Bone_Thumb2, Bones.Bone_FingerIndex1, Bones.Bone_FingerIndex2, Bones.Bone_FingerMiddle1, Bones.Bone_FingerMiddle2, Bones.Bone_FingerPinky1, Bones.Bone_FingerPinky2 };
+
     [HideInInspector]
-    public static MotionMatchingAnimator.Bones[] fullDOFBones = new MotionMatchingAnimator.Bones[]
-    {  Bone_LeftUpLeg, Bone_RightUpLeg, Bone_LeftFoot, Bone_RightFoot, Bone_LeftArm, Bone_RightArm, Bone_Hips};
+    public static Bones[] DOFBones = new Bones[]
+    {  Bones.Bone_UpperArm, Bones.Bone_LowerArm, Bones.Bone_Palm, Bones.Bone_Thumb1, Bones.Bone_Thumb2, Bones.Bone_FingerIndex1, Bones.Bone_FingerIndex2, Bones.Bone_FingerMiddle1, Bones.Bone_FingerMiddle2, Bones.Bone_FingerPinky1, Bones.Bone_FingerPinky2,};
+    
+    [HideInInspector]
+    public static Bones[] openloopBones = new Bones[]
+      {};
+
+    
+    // [HideInInspector]
+    // public static Bones[] extendedfullDOFBones = new Bones[]
+    // {  Bones.Bone_LeftUpLeg, Bones.Bone_RightUpLeg, Bones.Bone_LeftFoot, Bones.Bone_RightFoot, Bones.Bone_LeftArm, Bones.Bone_RightArm, Bones.Bone_Hips, Bones.Bone_Spine,  Bones.Bone_Spine1, Bones.Bone_Spine2, Bones.Bone_LeftShoulder, Bones.Bone_RightShoulder};
+    // [HideInInspector]
+    // public static Bones[] extendedLimitedDOFBones = new Bones[]
+    // {  Bones.Bone_LeftLeg, Bones.Bone_RightLeg, Bones.Bone_LeftForeArm, Bones.Bone_RightForeArm};
+    // [HideInInspector]
+    // public static Bones[] alwaysOpenloopBones = new Bones[]
+    // { Bones.Bone_Neck, Bones.Bone_Head, Bones.Bone_LeftHand, Bones.Bone_RightHand, Bones.Bone_LeftToe, Bones.Bone_RightToe};
 
 
-    [HideInInspector]
-    public static MotionMatchingAnimator.Bones[] extendedfullDOFBones = new MotionMatchingAnimator.Bones[]
-    {  Bone_LeftUpLeg, Bone_RightUpLeg, Bone_LeftFoot, Bone_RightFoot, Bone_LeftArm, Bone_RightArm, Bone_Hips, Bone_Spine,  Bone_Spine1, Bone_Spine2, Bone_LeftShoulder, Bone_RightShoulder};
-    [HideInInspector]
-    public static MotionMatchingAnimator.Bones[] limitedDOFBones = new MotionMatchingAnimator.Bones[]
-    {  Bone_LeftLeg, Bone_RightLeg };
-    [HideInInspector]
-    public static MotionMatchingAnimator.Bones[] extendedLimitedDOFBones = new MotionMatchingAnimator.Bones[]
-    {  Bone_LeftLeg, Bone_RightLeg, Bone_LeftForeArm, Bone_RightForeArm};
-    [HideInInspector]
-    public static MotionMatchingAnimator.Bones[] openloopBones = new MotionMatchingAnimator.Bones[]
-      {  Bone_Hips, Bone_Spine1, Bone_Spine2, Bone_Neck, Bone_Head, Bone_LeftForeArm, Bone_LeftHand, Bone_RightForeArm, Bone_RightHand, Bone_LeftShoulder, Bone_RightShoulder};
+    // private GameObject[] projectiles;
+    private GameObject curProjectile;
+    private GameObject curTarget;
 
-    public static MotionMatchingAnimator.Bones[] alwaysOpenloopBones = new MotionMatchingAnimator.Bones[]
-    { Bone_Neck, Bone_Head, Bone_LeftHand, Bone_RightHand, Bone_LeftToe, Bone_RightToe};
-
-    private GameObject[] projectiles;
     private int projectileIdx = 0;
     public GameObject projectilePrefab;
+    public GameObject targetPrefab;
     private float lastProjectileLaunchtime = 0f;
     public bool debug = false;
     public bool updateVelOnTeleport = true;
@@ -105,62 +133,42 @@ public class MLAgent : Agent
 
     float period = 1f / 60f;
 
+
+
     public override void CollectObservations(VectorSensor sensor)
     {
+        if (debug)
+            Debug.Log("OBS COLLECTED");
         sensor.AddObservation(getState());
     }
     private void applyActions(bool applyLastAction)
     {
+        if (debug)
+            Debug.Log(smoothedActions);
         if (applyLastAction)
             for (int i = 0; i < numActions; i++)
                 smoothedActions[i] = (1 - _config.ACTION_STIFFNESS_HYPERPARAM) * smoothedActions[i] + _config.ACTION_STIFFNESS_HYPERPARAM * prevActionOutput[i];
         if (debug)
             debugPrintActions();
-        Quaternion[] curRotations = MMScript.bone_rotations;
-        MotionMatchingAnimator.Bones[] fullDOFBonesToUse = _config.networkControlsAllJoints ? extendedfullDOFBones : fullDOFBones;
+        Quaternion[] curRotations = bone_rotations;
+        Bones[] DOFBonesToUse = DOFBones;
         int actionIdx = 0;
         switch (_config.actionRotType)
         {
-            case ActionRotationType.AxisAngle:
-                applyActionsAsAxisAngleRotations(smoothedActions, curRotations, fullDOFBonesToUse, ref actionIdx);
-                break;
             case ActionRotationType.Euler:
-                applyActionsAsEulerRotations(smoothedActions, curRotations, fullDOFBonesToUse, ref actionIdx);
+                applyActionsAsEulerRotations(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
                 break;
-            case ActionRotationType.SixD:
-                applyActionsWith6DRotations(smoothedActions, curRotations, fullDOFBonesToUse, ref actionIdx);
-                break; 
-            case ActionRotationType.Exp:
-                applyActionsAsExp(smoothedActions, curRotations, fullDOFBonesToUse, ref actionIdx);
-                break;
+            // case ActionRotationType.AxisAngle:
+            //     applyActionsAsAxisAngleRotations(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
+            //     break;
+            // case ActionRotationType.SixD:
+            //     applyActionsWith6DRotations(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
+            //     break; 
+            // case ActionRotationType.Exp:
+            //     applyActionsAsExp(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
+            //     break;
         }
-
-        MotionMatchingAnimator.Bones[] limitedDOFBonesToUse = _config.networkControlsAllJoints ? extendedLimitedDOFBones : limitedDOFBones;
-
-        for (int i = 0; i < limitedDOFBonesToUse.Length; i++)
-        {
-            int boneIdx = (int)limitedDOFBonesToUse[i];
-            ArticulationBody ab = simChar.boneToArtBody[boneIdx];
-            float output = smoothedActions[actionIdx];
-            actionIdx++;
-            var zDrive = ab.zDrive;
-            float target;
-            float range = zDrive.upperLimit - zDrive.lowerLimit;
-            if (_config.setRotsDirectly)
-            {
-                var midpoint = zDrive.lowerLimit + (range/2);
-                target = (output * (range/2)) + midpoint;
-            }
-            else
-            {
-                float angle = output * range;
-                Vector3 targetRotationInJointSpace = ab.ToTargetRotationInReducedSpace(curRotations[boneIdx], true);
-                target = targetRotationInJointSpace.z + angle;
-            }
-            zDrive.target = target;
-            ab.zDrive = zDrive;
-        }
-        MotionMatchingAnimator.Bones[] openloopBonesBonesToUse = _config.networkControlsAllJoints ? alwaysOpenloopBones : openloopBones;
+        Bones[] openloopBonesBonesToUse = openloopBones;
         for (int i = 0; i < openloopBonesBonesToUse.Length; i++)
         {
             int boneIdx = (int)openloopBonesBonesToUse[i];
@@ -168,22 +176,24 @@ public class MLAgent : Agent
             ArticulationBody ab = simChar.boneToArtBody[boneIdx];
             ab.SetDriveRotation(final);
         }
-        if (_config.setDriveTargetVelocities)
-            for (int i = 1; i < 23; i++)
-                simChar.boneToArtBody[i].SetDriveTargetVelocity(MMScript.bone_angular_velocities[i], curRotations[i]);
-
+        if (actionIdx != numActions)
+        {
+            throw new Exception($"Actions may not be properly intialized - length is {actionIdx} after copying everything");
+        }
     }
 
     public override void OnActionReceived(ActionBuffers actionBuffers)
     {
+        if (debug)
+            Debug.Log("RECIEVED ACTION");
         prevActionOutput = actionBuffers.ContinuousActions.Array;
         applyActions(true);
     }
-    private void applyActionsAsExp(float[] finalActions, Quaternion[] curRotations, MotionMatchingAnimator.Bones[] fullDOFBonesToUse, ref int actionIdx)
+    private void applyActionsAsExp(float[] finalActions, Quaternion[] curRotations, Bones[] DOFBonesToUse, ref int actionIdx)
     {
-        for (int i = 0; i < fullDOFBonesToUse.Length; i++)
+        for (int i = 0; i < DOFBonesToUse.Length; i++)
         {
-            int boneIdx = (int)fullDOFBonesToUse[i];
+            int boneIdx = (int)DOFBonesToUse[i];
             ArticulationBody ab = simChar.boneToArtBody[boneIdx];
             Vector3 output = new Vector3(finalActions[actionIdx], finalActions[actionIdx + 1], finalActions[actionIdx + 2]);
             actionIdx += 3;
@@ -194,11 +204,11 @@ public class MLAgent : Agent
 
     }
 
-    private void applyActionsAsAxisAngleRotations(float[] finalActions, Quaternion[] curRotations, MotionMatchingAnimator.Bones[] fullDOFBonesToUse, ref int actionIdx)
+    private void applyActionsAsAxisAngleRotations(float[] finalActions, Quaternion[] curRotations, Bones[] DOFBonesToUse, ref int actionIdx)
     {
-        for (int i = 0; i < fullDOFBonesToUse.Length; i++)
+        for (int i = 0; i < DOFBonesToUse.Length; i++)
         {
-            int boneIdx = (int)fullDOFBonesToUse[i];
+            int boneIdx = (int)DOFBonesToUse[i];
             ArticulationBody ab = simChar.boneToArtBody[boneIdx];
             Vector3 output = new Vector3(finalActions[actionIdx], finalActions[actionIdx + 1], finalActions[actionIdx + 2]) * 120;
             actionIdx += 3;
@@ -210,57 +220,49 @@ public class MLAgent : Agent
 
     }
 
-    private void applyActionsAsEulerRotations(float[] finalActions, Quaternion[] curRotations, MotionMatchingAnimator.Bones[] fullDOFBonesToUse, ref int actionIdx)
+    private void applyActionsAsEulerRotations(float[] finalActions, Quaternion[] curRotations, Bones[] DOFBonesToUse, ref int actionIdx)
     {
-        for (int i = 0; i < fullDOFBonesToUse.Length; i++)
+        for (int i = 0; i < DOFBonesToUse.Length; i++)
         {
-            int boneIdx = (int)fullDOFBonesToUse[i];
+            int boneIdx = (int)DOFBonesToUse[i];
             ArticulationBody ab = simChar.boneToArtBody[boneIdx];
-            Vector3 output = new Vector3(finalActions[actionIdx], finalActions[actionIdx + 1], finalActions[actionIdx + 2]);
-            actionIdx += 3;
-            Vector3 targetRotationInJointSpace = ab.ToTargetRotationInReducedSpace(curRotations[boneIdx], true);
-            float scale, midpoint;
-
-            var xdrive = ab.xDrive;
-            scale = (xdrive.upperLimit - xdrive.lowerLimit) / 2f;
-            midpoint = xdrive.lowerLimit + scale;
-            float outputX = _config.setRotsDirectly ? (output.x * scale) + midpoint : output.x * scale * 2;
-            if (_config.fullRangeEulerOutputs)
+            ArticulationDrive[] drives = new ArticulationDrive[]{ab.xDrive, ab.yDrive, ab.zDrive};
+            for (int j = 0; j < 3; j++)
             {
-                outputX = output.x * 180f;
-            }
-            xdrive.target = _config.setRotsDirectly ? outputX : targetRotationInJointSpace.x + outputX;
-            ab.xDrive = xdrive;
+                ArticulationDrive drive = drives[j];
+                float range = drive.upperLimit - drive.lowerLimit;
+                if (range == 0)
+                    continue;
 
-            var ydrive = ab.yDrive;
-            scale = (ydrive.upperLimit - ydrive.lowerLimit) / 2f;
-            midpoint = ydrive.lowerLimit + scale;
-            float outputY = _config.setRotsDirectly ? (output.y * scale) + midpoint : output.y * scale * 2;
-            if (_config.fullRangeEulerOutputs)
-            {
-                outputY = output.y * 180f;
-            }
-            ydrive.target = _config.setRotsDirectly ? outputY : targetRotationInJointSpace.y + outputY;
-            ab.yDrive = ydrive;
+                float output = smoothedActions[actionIdx];
+                float target;
 
-            var zdrive = ab.zDrive;
-            scale = (zdrive.upperLimit - zdrive.lowerLimit) / 2f;
-            midpoint = zdrive.lowerLimit + scale;
-            float outputZ = _config.setRotsDirectly ? (output.z * scale) + midpoint : output.z * scale * 2;
-            if (_config.fullRangeEulerOutputs)
-            {
-                outputZ = output.z * 180f;
+                if (_config.setRotsDirectly)
+                {
+                    var midpoint = drive.lowerLimit + (range/2);
+                    target = (output * (range/2)) + midpoint;
+                }
+                else
+                {
+                    float angle = output * range;
+                    Vector3 targetRotationInJointSpace = ab.ToTargetRotationInReducedSpace(curRotations[boneIdx], true);
+                    target = targetRotationInJointSpace[j] + angle;
+                }
+                drives[j].target = target;
+
+                actionIdx++;
             }
-            zdrive.target = _config.setRotsDirectly ? outputZ : targetRotationInJointSpace.z + outputZ;
-            ab.zDrive = zdrive;
+            ab.xDrive = drives[0];
+            ab.yDrive = drives[1];
+            ab.zDrive = drives[2];
         }
     }
 
-    private void applyActionsWith6DRotations(float[] finalActions, Quaternion[] curRotations, MotionMatchingAnimator.Bones[] fullDOFBonesToUse, ref int actionIdx)
+    private void applyActionsWith6DRotations(float[] finalActions, Quaternion[] curRotations, Bones[] DOFBonesToUse, ref int actionIdx)
     {
-        for (int i = 0; i < fullDOFBonesToUse.Length; i++)
+        for (int i = 0; i < DOFBonesToUse.Length; i++)
         {
-            int boneIdx = (int)fullDOFBonesToUse[i];
+            int boneIdx = (int)DOFBonesToUse[i];
             ArticulationBody ab = simChar.boneToArtBody[boneIdx];
             Vector3 outputV1 = new Vector3(finalActions[actionIdx], finalActions[actionIdx + 1], finalActions[actionIdx + 2]);
             Vector3 outputV2 = new Vector3(finalActions[actionIdx + 3], finalActions[actionIdx + 4], finalActions[actionIdx + 5]);
@@ -295,26 +297,26 @@ public class MLAgent : Agent
     public override void Heuristic(in ActionBuffers actionsout)
     {
 
-        Quaternion[] curRotations = MMScript.bone_rotations;
-        for (int i = 0; i < fullDOFBones.Length; i++)
-        {
-            int bone_idx = (int)fullDOFBones[i];
-            simChar.boneToArtBody[bone_idx].SetDriveRotation(curRotations[bone_idx]);
-        }
-        for (int i = 0; i < limitedDOFBones.Length; i++)
-        {
-            MotionMatchingAnimator.Bones bone =  limitedDOFBones[i];
-            ArticulationBody ab = simChar.boneToArtBody[(int)bone];
-            Vector3 target = ab.ToTargetRotationInReducedSpace(curRotations[(int) bone], true);
-            ArticulationDrive drive = ab.zDrive;
-            drive.target = target.z;
-            ab.zDrive = drive;
-        }
-        for (int i = 0; i < openloopBones.Length; i++)
-        {
-            int bone_idx = (int)openloopBones[i];
-            simChar.boneToArtBody[bone_idx].SetDriveRotation(curRotations[bone_idx]);
-        }
+        // Quaternion[] curRotations = bone_rotations;
+        // for (int i = 0; i < fullDOFBones.Length; i++)
+        // {
+        //     int bone_idx = (int)fullDOFBones[i];
+        //     simChar.boneToArtBody[bone_idx].SetDriveRotation(curRotations[bone_idx]);
+        // }
+        // for (int i = 0; i < limitedDOFBones.Length; i++)
+        // {
+        //     Bones bone =  limitedDOFBones[i];
+        //     ArticulationBody ab = simChar.boneToArtBody[(int)bone];
+        //     Vector3 target = ab.ToTargetRotationInReducedSpace(curRotations[(int) bone], true);
+        //     ArticulationDrive drive = ab.zDrive;
+        //     drive.target = target.z;
+        //     ab.zDrive = drive;
+        // }
+        // for (int i = 0; i < openloopBones.Length; i++)
+        // {
+        //     int bone_idx = (int)openloopBones[i];
+        //     simChar.boneToArtBody[bone_idx].SetDriveRotation(curRotations[bone_idx]);
+        // }
     }
     private Vector3 feetBozSize;
     private Vector3 leftfootColliderCenter;
@@ -332,15 +334,13 @@ public class MLAgent : Agent
             WhiteMatTransparent = Resources.Load<Material>("WhiteMatTransparent");
 #endif
             if (kinUseDebugMats)
-                UnityObjUtils.setAllChildrenRenderersMaterial(kinematicCharObj.transform, WhiteMatTransparent);
-            if (simUseDebugMats && !_config.useSkinnedMesh)
-                UnityObjUtils.setAllChildrenRenderersMaterial(simulatedCharObj.transform, RedMatTransparent);
+                UnityObjUtils.setAllChildrenRenderersMaterial(CharObj.transform, WhiteMatTransparent);
         }
         if (_config.useSkinnedMesh)
         {
-            foreach (var rend in simulatedCharObj.GetComponentsInChildren<Renderer>())
+            foreach (var rend in CharObj.GetComponentsInChildren<Renderer>())
                 rend.enabled = false;
-            var skin = simulatedCharObj.GetComponentInChildren<SkinnedMeshRenderer>(true);
+            var skin = CharObj.GetComponentInChildren<SkinnedMeshRenderer>(true);
             if (skin != null)
             {
                 skin.gameObject.SetActive(true);
@@ -348,57 +348,85 @@ public class MLAgent : Agent
             }
         }
 
-        MMScript = kinematicCharObj.GetComponent<MotionMatchingAnimator>();
-
-        MMScript.search_time = _config.searchTime;
-        if (!MMScript.is_initalized)
-            return;
-
-        kinChar = new CharInfo(nbodies, stateBones.Length);
-        kinChar.trans = kinematicCharObj.transform;
-        kinChar.boneToTransform = MMScript.boneToTransform;
-        kinChar.charObj = kinematicCharObj;
-        kinChar.MMScript = MMScript;
-
-        SimCharController = simulatedCharObj.GetComponent<SimCharController>();
-        SimCharController.debug = false;
-        SimCharController.enabled = true;
+        SimulationCharController = CharObj.GetComponent<SimCharController>();
+        SimulationCharController.debug = false;
+        SimulationCharController.enabled = true;
         simChar = new CharInfo(nbodies, stateBones.Length);
-        simChar.trans = simulatedCharObj.transform;
-        simChar.boneToTransform = SimCharController.boneToTransform;
-        simChar.root = SimCharController.boneToArtBody[(int)Bone_Entity];
+        simChar.trans = CharObj.transform;
+        simChar.boneToTransform = SimulationCharController.boneToTransform;
+        simChar.root = SimulationCharController.boneToArtBody[(int)Bones.Bone_Shoulder];
+        defaultChar = new CharInfo(simChar);
 
-        foreach (var body in simulatedCharObj.GetComponentsInChildren<ArticulationBody>())
+        foreach (var body in CharObj.GetComponentsInChildren<ArticulationBody>())
         {
             body.solverIterations = _config.solverIterations;
             body.solverVelocityIterations = _config.solverIterations;
         }
-        simChar.charObj = simulatedCharObj;
-        simChar.boneToArtBody = SimCharController.boneToArtBody;
+        simChar.charObj = CharObj;
+        simChar.boneToArtBody = SimulationCharController.boneToArtBody;
+        // foreach (Bones bone in fullDOFBones){
+        //     ArticulationBody body = simChar.boneToArtBody[(int) bone];
 
+        //     ArticulationDrive drive = body.xDrive;
+        //     drive.stiffness = _config.boneToStiffness[(int) bone];
+        //     drive.damping = _config.damping;
+        //     drive.forceLimit = _config.forceLimit;
+        //     simChar.boneToArtBody[(int) bone].xDrive = drive;
+            
+        //     drive = body.yDrive;
+        //     drive.stiffness = _config.boneToStiffness[(int) bone];
+        //     drive.damping = _config.damping;
+        //     drive.forceLimit = _config.forceLimit;
+        //     simChar.boneToArtBody[(int) bone].yDrive = drive;
+            
+        //     drive = body.zDrive;
+        //     drive.stiffness = _config.boneToStiffness[(int) bone];
+        //     drive.damping = _config.damping;
+        //     drive.forceLimit = _config.forceLimit;
+        //     simChar.boneToArtBody[(int) bone].zDrive = drive;
+        // }
+        // foreach (Bones bone in limitedDOFBones){
+        //     ArticulationBody body = simChar.boneToArtBody[(int) bone];
+
+        //     ArticulationDrive drive = body.xDrive;
+        //     drive.stiffness = _config.boneToStiffness[(int) bone];
+        //     drive.damping = _config.damping;
+        //     drive.forceLimit = _config.forceLimit;
+        //     simChar.boneToArtBody[(int) bone].xDrive = drive;
+            
+        //     drive = body.yDrive;
+        //     drive.stiffness = _config.boneToStiffness[(int) bone];
+        //     drive.damping = _config.damping;
+        //     drive.forceLimit = _config.forceLimit;
+        //     simChar.boneToArtBody[(int) bone].yDrive = drive;
+            
+        //     drive = body.zDrive;
+        //     drive.stiffness = _config.boneToStiffness[(int) bone];
+        //     drive.damping = _config.damping;
+        //     drive.forceLimit = _config.forceLimit;
+        //     simChar.boneToArtBody[(int) bone].zDrive = drive;
+        // }
+
+        // simChar.boneToCollider = SimulationCharController.boneToCollider;
         for (int i = 0; i < nbodies; i++)
         {
-            if (i == (int)Bone_LeftFoot || i == (int)Bone_RightFoot)
-            {
-                kinChar.boneToCollider[i] = UnityObjUtils.getChildBoxCollider(kinChar.boneToTransform[i].gameObject);
-                simChar.boneToCollider[i] = UnityObjUtils.getChildBoxCollider(simChar.boneToTransform[i].gameObject);
-                feetBozSize = kinChar.boneToCollider[i].GetComponent<BoxCollider>().size;
-                if (i == (int)Bone_LeftFoot)
-                    leftfootColliderCenter = simChar.boneToCollider[i].GetComponent<BoxCollider>().center;
-                else if (i == (int)Bone_RightFoot)
-                    rightfootColliderCenter = simChar.boneToCollider[i].GetComponent<BoxCollider>().center;
-            } else { 
-                kinChar.boneToCollider[i] = UnityObjUtils.getChildCapsuleCollider(kinChar.boneToTransform[i].gameObject);
-                simChar.boneToCollider[i] = UnityObjUtils.getChildCapsuleCollider(simChar.boneToTransform[i].gameObject);
-            }
+            // simChar.boneToCollider[i] = UnityObjUtils.getChildCapsuleCollider(simChar.boneToTransform[i].gameObject);
+            simChar.boneToCollider[i] = simChar.boneToTransform[i].gameObject;
+            bone_rotations[i] = simChar.boneToTransform[i].rotation;
+            // Debug.Log(simChar.boneToArtBody[i]);
         }
         groundColliderY = groundCollider.bounds.max.y;
-        toeColliderRadius = simChar.boneToCollider[(int)Bone_RightToe].GetComponent<CapsuleCollider>().radius;
-        projectiles = new GameObject[_config.maxNumProjectiles];
+        // toeColliderRadius = simChar.boneToCollider[(int)Bones.Bone_RightToe].GetComponent<CapsuleCollider>().radius;
+        // projectiles = new GameObject[_config.maxNumProjectiles];
 
         behaviorParameters = GetComponent<Unity.MLAgents.Policies.BehaviorParameters>();
         numObservations = behaviorParameters.BrainParameters.VectorObservationSize;
         numActions = behaviorParameters.BrainParameters.ActionSpec.NumContinuousActions;
+        if (debug)
+        {
+            Debug.Log(numObservations);
+            Debug.Log(numActions);
+        }
         bool isInference = behaviorParameters.BehaviorType == Unity.MLAgents.Policies.BehaviorType.InferenceOnly;
         if (isInference)
         {
@@ -407,18 +435,9 @@ public class MLAgent : Agent
             playerCamTarget.init(simChar.trans);
             thirdPersonCam.gameObject.SetActive(true);
             thirdPersonCam.Follow = camTarget.transform;
-            MMScript.playerCamTarget = playerCamTarget;
-            if (_config.userControl)
-                MMScript.gen_inputs = false;
-            if (_config.clampKinCharToSim)
-                foreach (var ab in simChar.trans.GetComponentsInChildren<ArticulationBody>())
-                {
-                    ab.gameObject.AddComponent<CollisionReporter>().agent = this;
-                    ab.collisionDetectionMode = CollisionDetectionMode.Continuous;
-                }
-            if (_config.doNotRenderKinChar)
-                foreach (var rend in kinChar.trans.GetComponentsInChildren<Renderer>())
-                    rend.enabled = false;
+            // MMScript.playerCamTarget = playerCamTarget;
+            // if (_config.userControl)
+            //     MMScript.gen_inputs = false;
         }
         curFixedUpdate = _config.EVALUATE_EVERY_K_STEPS - 1;
         resetData();
@@ -428,124 +447,165 @@ public class MLAgent : Agent
     {
         for (int i = 0; i < nbodies; i++)
         {
-            kinChar.boneSurfacePts[i] = new Vector3[6];
-            kinChar.boneSurfacePtsWorldSpace[i] = new Vector3[6];
-            kinChar.boneSurfaceVels[i] = new Vector3[6]; 
             simChar.boneSurfacePts[i] = new Vector3[6];
             simChar.boneSurfacePtsWorldSpace[i] = new Vector3[6];
             simChar.boneSurfaceVels[i] = new Vector3[6];
         }
         prevActionOutput = new float[numActions];
         smoothedActions = new float[numActions];
-        kinChar.boneState = new float[36];
-        simChar.boneState = new float[36];
-        UpdateKinCMData(false, period);
-        UpdateSimCMData(false, period);
+        simChar.boneState = new float[6*11 + 9];
+        UpdateCMData(false, period);
         UpdateBoneObsState(false, period, true);
         UpdateBoneSurfacePts(false, period);
     }
-
     public void Awake()
     {
-        if (motionDB == null)
-            motionDB = MocapDB.Instance;
+        // base.Initialize();
+    // }
+    // public void OnEnable()
+    // {
+        Debug.Log("Start MLAgent Setup");
+        // if (motionDB == null)
+        //     motionDB = MocapDB.Instance;
         _config = ConfigManager.Instance;
         _sixtyFPSSyncOracle = SixtyFPSSyncOracle.Instance;
-        nbodies = motionDB.nbones();
-        kinematicCharObj = Instantiate(_config.useCapsuleFeet ? kinematic_char_type2_prefab : kinematic_handmade_char_prefab  , Vector3.zero, Quaternion.identity);
-        simulatedCharObj = Instantiate(_config.useCapsuleFeet ? simulated_char_type2_prefab : simulated_handmade_char_prefab  , Vector3.zero, Quaternion.identity);
+        // Debug.Log("1");
+        CharObj = Instantiate(simulated_prefab , Vector3.zero, Quaternion.identity);
+        // Debug.Log("2");
         debug = debug && !Academy.Instance.IsCommunicatorOn;
         if (Academy.Instance.IsCommunicatorOn)
         {
             int numStepsPerSecond = (int)Mathf.Ceil(1f / period);
             MaxStep = numStepsPerSecond * _config.MAX_EPISODE_LENGTH_SECONDS;
         }
+        // Debug.Log("3");
         customInit();
+        Debug.Log("Finished MLAgent Setup");
     }
     public override void OnEpisodeBegin()
     {
-        if (_config.resetKinCharOnEpisodeEnd)
-        {
-            MMScript.Reset();
-            MMScript.FixedUpdate();
-        }
         //Debug.Log($"{Time.frameCount}: Begin Episode on: {curFixedUpdate}, lasted {curFixedUpdate - lastEpisodeEndingFrame} frames ({(curFixedUpdate - lastEpisodeEndingFrame) / 60f} sec)");
         lastEpisodeEndingFrame = curFixedUpdate;
-        float verticalOffset = getVerticalOffset();
-        SimCharController.teleportSimChar(simChar, kinChar, verticalOffset + .02f, !_config.resetKinCharOnEpisodeEnd && updateVelOnTeleport);
+        // float verticalOffset = _config.ARM_VERT_OFFSET;
+        SimCharController.teleportSimChar(simChar, defaultChar, 0, updateVelOnTeleport);
         lastSimCharTeleportFixedUpdate = curFixedUpdate;
         Physics.Simulate(.00001f);
         resetData();
-        kinChar.cmVel = Vector3.zero;
         simChar.cmVel = Vector3.zero;
     }
 
     bool updateVelocity;
     public void FixedUpdate()
     {
-        if (MMScript.teleportedThisFixedUpdate)
-        {
-            Vector3 preTeleportSimCharPosOffset = lastKinRootPos - simChar.root.transform.position;
-            SimCharController.teleportSimCharRoot(simChar, MMScript.origin, preTeleportSimCharPosOffset);
-            applyActions(false);
-            lastSimCharTeleportFixedUpdate = curFixedUpdate;
-        }
+        //teleporting 
+        // if (MMScript.teleportedThisFixedUpdate)
+        // {
+        //     Vector3 preTeleportSimCharPosOffset = lastKinRootPos - simChar.root.transform.position;
+        //     SimulationCharController.teleportSimCharRoot(simChar, MMScript.origin, preTeleportSimCharPosOffset);
+        //     applyActions(false);
+        //     lastSimCharTeleportFixedUpdate = curFixedUpdate;
+        // }
 
         if (!_sixtyFPSSyncOracle.isSyncFrame)
             return;
 
         curFixedUpdate++;
         updateVelocity = lastSimCharTeleportFixedUpdate + 1 < curFixedUpdate;
-        UpdateKinCMData(updateVelocity, period);
-        UpdateBoneObsState(updateVelocity, period);
 
+        UpdateProjectileTarget();
+        UpdateBoneObsState(updateVelocity, period);
+        
         if (curFixedUpdate % _config.EVALUATE_EVERY_K_STEPS == 0)
             RequestDecision();
+            if (debug)
+                Debug.Log("DECISION REQUESTED");
         else 
             applyActions(_config.applyActionOverMultipleTimeSteps);
         
-        if (_config.projectileTraining)
-            FireProjectile();
-
-        lastKinRootPos = kinChar.trans.position;
+        // if (_config.projectileTraining)
+        //     FireProjectile();
     }
-    private void FireProjectile()
+    Vector3 prevProjPos, curProjPos, projVel, curTargetPos;
+    private void UpdateProjectileTarget()
     {
         if (Time.time - lastProjectileLaunchtime < _config.LAUNCH_FREQUENCY)
             return;
         lastProjectileLaunchtime = Time.time;
-        projectileIdx %= _config.maxNumProjectiles;
-        var curProjectile = projectiles[projectileIdx];
-        Destroy(curProjectile);
+        if (curProjectile == null || curTarget == null){
+            projectileIdx++;
+            if (projectileIdx == _config.maxNumProjectiles){
+                prevProjPos = new Vector3();
+                curProjPos = new Vector3();
+                projectileIdx = 0;
+                if (debug)
+                    Debug.Log("EPISODE END");
+                EndEpisode();
+            }
+            curProjectile = Instantiate(projectilePrefab, Vector3.zero, Quaternion.identity);
+            curTarget = Instantiate(targetPrefab, Vector3.zero, Quaternion.identity);
 
-        var projectile = Instantiate(projectilePrefab, Vector3.zero, Quaternion.identity);
-        var projectileRB = projectile.GetComponent<Rigidbody>();
-        projectiles[projectileIdx] = projectile;
-        projectileIdx++;
-
-        projectile.transform.localScale = Vector3.one * _config.PROJECTILE_SCALE * .15f;
-        projectileRB.mass = UnityEngine.Random.Range(_config.PROJECTILE_MIN_WEIGHT, _config.PROJECTILE_MAX_WEIGHT);
-
-        Vector2 randomUnitCircle = UnityEngine.Random.insideUnitCircle.normalized;
-        Vector3 finalPosition = simChar.cm + new Vector3(randomUnitCircle.x, 0f, randomUnitCircle.y) * _config.LAUNCH_RADIUS;
-
-        projectile.transform.position = finalPosition;
-
-        float timeToTravel = _config.LAUNCH_RADIUS / _config.LAUNCH_SPEED;
-        float YTarget = UnityEngine.Random.Range(simChar.cm.y - .5f, simChar.cm.y + .5f);
-        float changeInY = YTarget - simChar.cm.y;
-        float totalAcceleration = timeToTravel * -9.8f; 
-        float curYVelocity = -totalAcceleration + (changeInY / timeToTravel);
-        projectileRB.AddForce(-randomUnitCircle.x * _config.LAUNCH_SPEED, curYVelocity, -randomUnitCircle.y * _config.LAUNCH_SPEED, ForceMode.VelocityChange);
+            var projectileRB = curProjectile.GetComponent<Rigidbody>();
+            curProjectile.transform.localScale = Vector3.one * UnityEngine.Random.Range(_config.PROJECTILE_MIN_SCALE, _config.PROJECTILE_MAX_SCALE);
+            projectileRB.mass = UnityEngine.Random.Range(_config.PROJECTILE_MIN_WEIGHT, _config.PROJECTILE_MAX_WEIGHT);
+            float projectile_h = UnityEngine.Random.Range(_config.PROJECTILE_MIN_HEIGHT, _config.PROJECTILE_MAX_HEIGHT);
+            Vector2 randomUnitCircle = UnityEngine.Random.insideUnitCircle.normalized;
+            curProjectile.transform.position = simChar.trans.position + new Vector3(_config.PROJECTILE_SPAWNCENTER_X + randomUnitCircle.x * _config.PROJECTILE_RADIUS, projectile_h, randomUnitCircle.y * _config.PROJECTILE_RADIUS);
+            
+            var targetCollider = curTarget.GetComponent<SphereCollider>();
+            curTarget.transform.localScale = Vector3.one * _config.TARGET_RADIUS;
+            // targetCollider.radius = _config.TARGET_RADIUS;
+            Vector3 targetPos = UnityEngine.Random.insideUnitSphere.normalized*_config.TARGET_SPAWN_RADIUS;
+            targetPos += new Vector3(_config.TARGET_SPAWNCENTER_X, _config.TARGET_SPAWNCENTER_Y, _config.TARGET_SPAWNCENTER_Z);
+            curTarget.transform.position = targetPos;
+            
+            prevProjPos = curProjPos = curProjectile.transform.position;
+        }else{
+            prevProjPos = curProjPos;
+            curProjPos = curProjectile.transform.position;
+            projVel = (curProjPos - prevProjPos) / period;
+            curTargetPos = curTarget.transform.position;
+        }
     }
-
-    private void UpdateKinCMData(bool updateVelocity, float dt)
+    
+    private void CheckProjectileTarget(out bool groundHit, out bool targetHit, out bool handHit, out bool armHit, out int nHandHit)
     {
-        Vector3 newKinCM = getCM(kinChar.boneToTransform);
-        kinChar.cmVel = updateVelocity ? (newKinCM - kinChar.cm) / dt : kinChar.cmVel;
-        kinChar.cm = newKinCM;
+        groundHit=false;
+        targetHit=false;
+        handHit=false;
+        armHit=false;
+        nHandHit = 0;
+        if (!curProjectile)
+            return;
+
+        if (curProjectile.transform.position.y < groundColliderY){
+            groundHit=true;
+            Destroy(curProjectile);
+            Destroy(curTarget);
+        }
+        var targetScript = curProjectile.GetComponent<ProjectileScript>();
+        if (targetScript.hitTarget){
+            targetHit=true;
+            Destroy(curTarget);
+            Destroy(curProjectile);
+        } 
+        else if (targetScript.onArm){
+            armHit=true;
+        }
+        else if (targetScript.onHand){
+            handHit=true;
+            nHandHit= targetScript.nOnHand;
+        }
     }
-    private void UpdateSimCMData(bool updateVelocity, float dt)
+    // private void FireProjectile()
+    // {
+    //     float timeToTravel = _config.LAUNCH_RADIUS / _config.LAUNCH_SPEED;
+    //     float YTarget = UnityEngine.Random.Range(simChar.cm.y - .5f, simChar.cm.y + .5f);
+    //     float changeInY = YTarget - simChar.cm.y;
+    //     float totalAcceleration = timeToTravel * -9.8f; 
+    //     float curYVelocity = -totalAcceleration + (changeInY / timeToTravel);
+    //     projectileRB.AddForce(-randomUnitCircle.x * _config.LAUNCH_SPEED, curYVelocity, -randomUnitCircle.y * _config.LAUNCH_SPEED, ForceMode.VelocityChange);
+    // }
+    private void UpdateCMData(bool updateVelocity, float dt)
     {
         Vector3 newSimCM = getCM(simChar.boneToTransform);
         simChar.cmVel = updateVelocity ? (newSimCM - simChar.cm) / dt : simChar.cmVel;
@@ -554,60 +614,66 @@ public class MLAgent : Agent
 
     private void UpdateBoneSurfacePts(bool updateVelocity, float dt)
     {
-        foreach (bool isKinChar in new bool[] { true, false })
-            for (int i = 1; i < 23; i++)
+        for (int i = 1; i < nbodies; i++)
+        {
+            var charInfo = simChar;
+            Vector3[] newSurfacePts = new Vector3[6];
+            Vector3[] newWorldSurfacePts = new Vector3[6];
+            UnityObjUtils.getSixPointsOnCollider(charInfo.boneToCollider[i], ref newWorldSurfacePts, (Bones)i);
+            Vector3[] prevWorldSurfacePts = charInfo.boneSurfacePtsWorldSpace[i];
+
+            for (int j = 0; j < 6; j++)
             {
-                var charInfo = isKinChar ? kinChar : simChar;
-                Vector3[] newSurfacePts = new Vector3[6];
-                Vector3[] newWorldSurfacePts = new Vector3[6];
-                UnityObjUtils.getSixPointsOnCollider(charInfo.boneToCollider[i], ref newWorldSurfacePts, (MotionMatchingAnimator.Bones)i);
-                Vector3[] prevWorldSurfacePts = charInfo.boneSurfacePtsWorldSpace[i];
-
-                for (int j = 0; j < 6; j++)
+                newSurfacePts[j] = resolvePosInRefFrame(newWorldSurfacePts[j]);
+                if (updateVelocity)
                 {
-                    newSurfacePts[j] = isKinChar ? resolvePosInKinematicRefFrame(newWorldSurfacePts[j]) :  resolvePosInSimRefFrame(newWorldSurfacePts[j]);
-                    if (updateVelocity)
-                    {
-                        Vector3 surfaceVel = (newWorldSurfacePts[j] - prevWorldSurfacePts[j]) / dt;
-                        charInfo.boneSurfaceVels[i][j] = isKinChar ? resolveVelInKinematicRefFrame(surfaceVel) : resolveVelInSimRefFrame(surfaceVel);
-                    }
+                    Vector3 surfaceVel = (newWorldSurfacePts[j] - prevWorldSurfacePts[j]) / dt;
+                    charInfo.boneSurfaceVels[i][j] = resolveVelInRefFrame(surfaceVel);
                 }
-                charInfo.boneSurfacePtsWorldSpace[i] = newWorldSurfacePts;
-                charInfo.boneSurfacePts[i] = newSurfacePts;
             }
+            charInfo.boneSurfacePtsWorldSpace[i] = newWorldSurfacePts;
+            charInfo.boneSurfacePts[i] = newSurfacePts;
+        }
     }
-
+// update bonestate
     private void UpdateBoneObsState(bool updateVelocity, float dt, bool zeroVelocity = false, bool updateKinOnly = false)
     {
-        foreach (bool isKinChar in new bool[]{true, false}) {
-            if (updateKinOnly && !isKinChar)
-                continue;
-            CharInfo curInfo = isKinChar ? kinChar : simChar;
-            float[] copyInto = curInfo.boneState;
-            int copyIdx = 0;
-            for (int j = 0; j < stateBones.Length; j++)
-            {
-                MotionMatchingAnimator.Bones bone = stateBones[j];
-                Vector3 boneWorldPos = curInfo.boneToTransform[(int)bone].position;
-                Vector3 boneLocalPos = isKinChar ? resolvePosInKinematicRefFrame(boneWorldPos) : resolvePosInSimRefFrame(boneWorldPos);
-                Vector3 prevBonePos = curInfo.boneWorldPos[j];
-                Vector3 boneVel = (boneWorldPos - prevBonePos) / dt;
-                boneVel = zeroVelocity ? Vector3.zero : isKinChar ? resolveVelInKinematicRefFrame(boneVel) : resolveVelInSimRefFrame(boneVel);
-                ArrayUtils.copyVecIntoArray(ref copyInto, ref copyIdx, boneLocalPos);
+        CharInfo curInfo = simChar;
+        float[] copyInto = curInfo.boneState;
+        int copyIdx = 0;
+        for (int j = 0; j < stateBones.Length; j++)
+        {
+            Bones bone = stateBones[j];
+            Vector3 boneWorldPos = curInfo.boneToTransform[(int)bone].position;
+            Vector3 boneLocalPos = resolvePosInRefFrame(boneWorldPos);
+            Vector3 prevBonePos = curInfo.boneWorldPos[j];
+            Vector3 boneVel = (boneWorldPos - prevBonePos) / dt;
+            boneVel = zeroVelocity ? Vector3.zero : resolveVelInRefFrame(boneVel);
 
-                if (updateVelocity || zeroVelocity)
-                    ArrayUtils.copyVecIntoArray(ref copyInto, ref copyIdx, boneVel);
-                else
-                    copyIdx += 3;
-                curInfo.boneWorldPos[j] = boneWorldPos;
-            }
+            ArrayUtils.copyVecIntoArray(ref copyInto, ref copyIdx, boneLocalPos);
+            if (updateVelocity || zeroVelocity)
+                ArrayUtils.copyVecIntoArray(ref copyInto, ref copyIdx, boneVel);
+            else
+                copyIdx += 3;
+            curInfo.boneWorldPos[j] = boneWorldPos;
         }
+
+        if (curProjectile is not null){
+            projVel = (curProjPos - prevProjPos) / dt;
+            ArrayUtils.copyVecIntoArray(ref copyInto, ref copyIdx, curTargetPos);
+            ArrayUtils.copyVecIntoArray(ref copyInto, ref copyIdx, curProjPos);
+            ArrayUtils.copyVecIntoArray(ref copyInto, ref copyIdx, projVel);
+        }
+        else
+            copyIdx += 9;
     }
 
     public void AssignLayer(int layer)
     {
-        simulatedCharObj.layer = layer;
-        foreach (var child in simulatedCharObj.GetComponentsInChildren<Transform>())
+        // Debug.Log(CharObj);
+        CharObj.layer = layer;
+        foreach (var child in CharObj.GetComponentsInChildren<Transform>())
+        // foreach (var child in CharObj.GetComponent<Transform>())
             child.gameObject.layer = layer;
     }
 
@@ -619,112 +685,103 @@ public class MLAgent : Agent
     {
         if (!_sixtyFPSSyncOracle.isSyncFrame)
             return;
-        calcAndSetRewards();
-
+        CheckProjectileTarget(out bool groundHit, out bool targetHit, out bool handHit, out bool armHit, out int nHandHit);
+        calcAndSetRewards(groundHit, targetHit, handHit, armHit, nHandHit);
+        
+        // for (int i = 0;i<GetComponents(typeof(Component)).Length;i++){
+        //     Debug.Log(GetComponents(typeof(Component))[i]);
+        // }
+        if (behaviorParameters == null){
+            Debug.Log("not initialized");
+            customInit();
+        }
         bool inInferenceMode = behaviorParameters.BehaviorType == Unity.MLAgents.Policies.BehaviorType.InferenceOnly;
         if (!inInferenceMode)
             return;
-        if (_config.clampKinCharToSim) {
-            Quaternion horizontalHeadingRotation = Quaternion.Euler(0f, simChar.trans.rotation.eulerAngles.y, 0f);
-            MMScript.clamp_pos_and_rot(new Vector3(simChar.cm.x, 0f, simChar.cm.z), horizontalHeadingRotation);
-        }
-        UpdateKinCMData(false, period);
         UpdateBoneObsState(false, period, false, true);
         return;
     }
     // returns TRUE if episode ended
-    public bool calcAndSetRewards()
+    private void calcProjectileTargetReward(out double posReward, out double velReward){
+        if (!curTarget || !curProjectile){
+            posReward = -1;
+            velReward = -1;
+            return;
+        }
+        Vector3 distance = curTarget.transform.position - curProjectile.transform.position;
+        posReward = - distance.magnitude / (new Vector3(_config.TARGET_SPAWNCENTER_X - _config.PROJECTILE_SPAWNCENTER_X, _config.TARGET_SPAWNCENTER_Y, _config.TARGET_SPAWNCENTER_Z).magnitude);
+        velReward = (Vector3.Dot(distance,projVel)) / (distance.magnitude+1e-5) / (projVel.magnitude+1e-5);
+    }
+    private void calcProjectileAgentReward(bool handHit, bool armHit, int nHandHit, out double agentReward){
+        agentReward = 0;
+        if (handHit){
+            agentReward = 20 + 60 * nHandHit;
+        }
+        else if (armHit){
+            agentReward = 60;
+        }
+    }
+    // private void calcRotationReward(out double rotReward){
+    //     Vector3 angles = simChar.boneToTransform[(int) Bones.Bone_UpperArm].transform.rotation.eulerAngles;
+    //     rotReward = 0.01f * (180 - Mathf.Abs(angles[0])+Mathf.Abs(angles[0])+Mathf.Abs(angles[0]));
+    // }
+    // private void calcProjectileTargetReward(out double reward){
+    // }
+    public bool calcAndSetRewards(bool groundHit, bool targetHit, bool handHit, bool armHit, int nHandHit)
     {
-        bool heads1mApart;
-        double posReward, velReward, localPoseReward, cmVelReward, fallFactor;
-        calcFallFactor(out fallFactor, out heads1mApart);
-        if ((heads1mApart && curFixedUpdate > lastSimCharTeleportFixedUpdate + 1 && !_config.clampKinCharToSim) || (_config.clampKinCharToSim && shouldEndThisFrame))
-        {
-            finalReward = _config.EPISODE_END_REWARD;
-            SetReward(_config.EPISODE_END_REWARD);
-            Debug.Log($"{Time.frameCount}: Calling end episode on: {curFixedUpdate}, lasted {curFixedUpdate - lastEpisodeEndingFrame} frames ({(curFixedUpdate - lastEpisodeEndingFrame) / 60f} sec)");
-            //lastEpisodeEndingFrame = curFixedUpdate;
-            shouldEndThisFrame = false;
-            EndEpisode();
+        // bool heads1mApart;
+        // double velReward, posReward, localPoseReward, cmVelReward, fallFactor;
+        double posReward, velReward, agentReward;
+        // calcProjectileTargetReward(out posReward, out velReward);
+        calcProjectileAgentReward(handHit, armHit, nHandHit, out agentReward);
+
+        // finalReward = (float) (2*posReward + 1*velReward + agentReward);
+        finalReward = (float) (agentReward);
+        finalReward = finalReward/60f - 0.01f;
+        if (targetHit){
+            if (debug)
+                Debug.Log("TARGET HIT");
+            finalReward = 1000;
+            SetReward(finalReward);
             return true;
         }
-
-        UpdateSimCMData(updateVelocity, period);
-        UpdateBoneSurfacePts(updateVelocity, period);
-        calcPosAndVelReward(out posReward, out velReward);
-        calcLocalPoseReward(out localPoseReward);
-        calcCMVelReward(out cmVelReward);
-        if (curFixedUpdate - _config.N_FRAMES_TO_NOT_COUNT_REWARD_AFTER_TELEPORT < lastEpisodeEndingFrame)
-            finalReward = 0f;
-        else
-            finalReward = (float)(fallFactor * (posReward + velReward + localPoseReward + cmVelReward));
-        //updateMeanReward(final_reward);
+        if (groundHit){
+            if (debug)
+                Debug.Log("GROUND HIT");
+            finalReward = -100;
+            SetReward(finalReward);
+            return true;
+        }
+        // updateMeanReward(finalReward);
         AddReward(finalReward);
+        // Debug.Log($"posReward {posReward}");
+        // Debug.Log($"velReward {velReward}");
+        // Debug.Log(GetCumulativeReward());
         return false;
     }
-
-    /*
-       adding my own: difference in center of mass for each character
-       The state contains (from Drecon paper):
-       Center of Mass velocity in R^3 for kinematic and simulated character
-
-       The desired horizontal CM velocity from user-input is also considered v(des) - R^2
-
-       The diff between current simulated character horizontal
-       CM velocity and v(des) = v(diff) R^2
-
-       For a subset of bodies:
-       Left Toe, RightToe, Spine, Head, LeftForeArm, RightForeArm
-       We compute positions and velocities then concatenate these giving s(sim)
-       and s(kin) in R^36
-
-       The smootehd actions produced in the previous step of the policy are collected
-       in y(t-1) in R^25
-
-       Animated character body positions, velocities, CM velocity, and
-       desired CM velocity are resolved in reference frame F(kin), which
-       is formed from the horizontal heading of the kinematic character,
-       the gravity direction, and positioned at the character CM
-
-       The exact same procedure is used for the simulated character positions and
-       velocities, except with a frame F(sim), which is identical to F(kin) in
-       orientation but positioned at the simulated character’s CM position.
-
-       Note that when velocities are decomposed into F(kin) or F(sim), the
-       reference frames are considered to have no angular or linear velocity
-       and acceleration so that global velocity features are measurable in
-       the state.
-    */ 
     float[] getState()
     {
-
-        Vector3 cmDistance = resolvePosInKinematicRefFrame(simChar.cm);
-        Vector3 kinCMVelInKinRefFrame = resolveVelInKinematicRefFrame(kinChar.cmVel);        
-        Vector3 simCMVelInKinRefFrame = resolveVelInSimRefFrame(simChar.cmVel);
-        Vector3 desiredVel = resolveVelInKinematicRefFrame(MMScript.desired_velocity);
-        Vector3 velDiffSimMinusDesired = simCMVelInKinRefFrame - desiredVel;
-
         float[] state = new float[numObservations];
         int state_idx = 0;
-        ArrayUtils.copyVecIntoArray(ref state, ref state_idx, cmDistance);
-        ArrayUtils.copyVecIntoArray(ref state, ref state_idx, kinCMVelInKinRefFrame);
-        ArrayUtils.copyVecIntoArray(ref state, ref state_idx, simCMVelInKinRefFrame);
-        ArrayUtils.copyVecIntoArray(ref state, ref state_idx, simCMVelInKinRefFrame - kinCMVelInKinRefFrame);
-        ArrayUtils.copyVecIntoArray(ref state, ref state_idx, new Vector2(desiredVel.x, desiredVel.z));
-        ArrayUtils.copyVecIntoArray(ref state, ref state_idx, new Vector2(velDiffSimMinusDesired.x, velDiffSimMinusDesired.z));
+        
+        // if (curProjectile is not null){
+        //     int copyIdx = 0;
+        //     float[] copyInto = new float[11*6];
+        //     ArrayUtils.copyVecIntoArray(ref copyInto, ref copyIdx, curProjPos);
+        //     ArrayUtils.copyVecIntoArray(ref copyInto, ref copyIdx, (curProjPos - prevProjPos) / dt);
+        //     for (int i = 0; i < 11*6; i++){
+        //         state[state_idx++] = simChar.boneState[i] - copyInto;
+        //     }
 
-        if (_config.addOrientationDataToObsState)
-        {
-            float yawDiffKinAndSim = (Quaternion.Inverse(kinChar.trans.rotation) * simulatedCharObj.transform.rotation).GetYAngle();
-            float yawDiffDesiredAndSim = (Quaternion.Inverse(MMScript.desired_rotation) * simulatedCharObj.transform.rotation).GetYAngle();
-            ArrayUtils.copyVecIntoArray(ref state, ref state_idx, MathUtils.getContinuousRepOf2DAngle(yawDiffKinAndSim));
-            ArrayUtils.copyVecIntoArray(ref state, ref state_idx, MathUtils.getContinuousRepOf2DAngle(yawDiffDesiredAndSim));
-        }
+        // } else {
+        //     for (int i = 0; i < 11*6; i++){
+        //         state[state_idx++] = 0;
+        //     }
+        // }
+        // Vector3 palmPos = simChar.boneToTransform[(int) Bones.Bone_Palm].transform;
 
-        for (int i = 0; i < 36; i++)
+        for (int i = 0; i < 11*6 + 9; i++)
             state[state_idx++] = simChar.boneState[i];
-        for (int i = 0; i < 36; i++)
-            state[state_idx++] = simChar.boneState[i] - kinChar.boneState[i];
         for (int i = 0; i < numActions; i++)
             state[state_idx++] = smoothedActions[i];
    
@@ -734,7 +791,6 @@ public class MLAgent : Agent
         //if (debug)
         //    ArrayUtils.debugArray(state, $"{curFixedUpdate} state: ");
         return state;
-
     }
 
     // Gets CoM in world position
@@ -759,83 +815,29 @@ public class MLAgent : Agent
     // Velocity is different in that we only need to make its rotation
     // local to the kinematic character, whereas with pos we also need to
     // position at the character's CM position
-    Vector3 resolveVelInKinematicRefFrame(Vector3 vel)
+    // Vector3 resolveVelInKinematicRefFrame(Vector3 vel)
+    // {
+    //     // using same logic as in desired_velocity_update
+    //     return MathUtils.quat_inv_mul_vec3(kinChar.trans.rotation, vel);
+    // }
+    Vector3 resolveVelInRefFrame(Vector3 vel)
     {
         // using same logic as in desired_velocity_update
-        return MathUtils.quat_inv_mul_vec3(kinChar.trans.rotation, vel);
+        return MathUtils.quat_inv_mul_vec3(simChar.trans.rotation, vel);
     }
-    Vector3 resolveVelInSimRefFrame(Vector3 vel)
+    // Vector3 resolvePosInKinematicRefFrame(Vector3 pos)
+    // {
+    //     // using same logic as in desired_velocity_update
+    //     return MathUtils.quat_inv_mul_vec3(kinChar.trans.rotation, pos - kinChar.cm);
+    // }
+    Vector3 resolvePosInRefFrame(Vector3 pos)
     {
         // using same logic as in desired_velocity_update
-        return MathUtils.quat_inv_mul_vec3(_config.resolveSimReferenceFrameWithSimRotation ? simChar.trans.rotation : kinChar.trans.rotation, vel);
-    }
-    Vector3 resolvePosInKinematicRefFrame(Vector3 pos)
-    {
-        // using same logic as in desired_velocity_update
-        return MathUtils.quat_inv_mul_vec3(kinChar.trans.rotation, pos - kinChar.cm);
-    }
-    Vector3 resolvePosInSimRefFrame(Vector3 pos)
-    {
-        // using same logic as in desired_velocity_update
-        return MathUtils.quat_inv_mul_vec3(_config.resolveSimReferenceFrameWithSimRotation  ? simChar.trans.rotation : kinChar.trans.rotation, pos - simChar.cm);
-    }
-
-    void calcPosAndVelReward(out double posReward, out double velReward)
-    {
-        // Position reward
-        double posDiffsSum = 0f;
-        double velDiffsSum = 0f;
-        for (int i = 1; i < 23; i++)
-        {
-            for (int j = 0; j < 6; j++)
-            {
-                posDiffsSum += (kinChar.boneSurfacePts[i][j] - simChar.boneSurfacePts[i][j]).magnitude;
-                velDiffsSum += (kinChar.boneSurfaceVels[i][j] - simChar.boneSurfaceVels[i][j]).magnitude;
-            }
-        }
-        posReward = Math.Exp((-10f / (nbodies)) *  posDiffsSum );
-        velReward = Math.Exp((-1f / (nbodies)) *  velDiffsSum );
-    }
-
-    void calcLocalPoseReward(out double poseReward)
-    {
-        double totalLoss = 0;
-        for (int i = 0; i < 23; i++)
-        {
-            Transform kinBone = kinChar.boneToTransform[i];
-            Transform simBone = simChar.boneToTransform[i];
-            // From Stack Overflow:
-            //If you want to find a quaternion diff such that diff * q1 == q2, then you need to use the multiplicative inverse:
-            // diff * q1 = q2  --->  diff = q2 * inverse(q1)
-            Quaternion diff = simBone.localRotation * Quaternion.Inverse(kinBone.localRotation);
-            // https://stackoverflow.com/questions/21513637/dot-product-of-two-quaternion-rotations
-            Vector3 diff_vec = new Vector3(diff.x, diff.y, diff.z);
-            double angle = 2 * Math.Atan2(diff_vec.magnitude, diff.w);
-            // We want the magnitude of the diff so we take abs value
-            angle = Math.Abs(GeoUtils.wrap_radians((float)angle));
-            totalLoss += (float)angle;
-        }
-        poseReward = Math.Exp((-10f/nbodies) * totalLoss);
-    }
-
-    void calcCMVelReward(out double cmVelReward)
-    {
-        cmVelReward = Math.Exp(-1d * (resolveVelInKinematicRefFrame(kinChar.cmVel) - resolveVelInSimRefFrame(simChar.cmVel)).magnitude);
-    }
-
-    void calcFallFactor(out double fallFactor, out bool heads1mApart)
-    {
-        Vector3 kinHeadPos = kinChar.boneToTransform[(int)Bone_Head].position;
-        Vector3 simHeadPos = simChar.boneToTransform[(int)Bone_Head].position;
-        float headDistance = (kinHeadPos - simHeadPos).magnitude;
-        heads1mApart = headDistance > 1f;
-        fallFactor = Math.Clamp(1.3 - 1.4 * headDistance, 0d, 1d);
+        return MathUtils.quat_inv_mul_vec3(simChar.trans.rotation, pos - simChar.cm);
     }
 
     public void processCollision(Collision collision)
     {
-        if (!_config.clampKinCharToSim)
-            return;
         foreach (ContactPoint contact in collision.contacts)
         {
             string colliderName = contact.thisCollider.gameObject.name;
@@ -847,31 +849,31 @@ public class MLAgent : Agent
         }
     }
 
-    private float getBottomMostPointOnFoot(Transform foot, Vector3 center)
-    {
-        float x = feetBozSize.x / 2;
-        float y = feetBozSize.y / 2;
-        float z = feetBozSize.z / 2;
-        Vector3 topLeft = foot.TransformPoint(center + new Vector3(x, -y, z));
-        Vector3 topRight = foot.TransformPoint(center + new Vector3(x, -y, -z));
-        Vector3 bottomLeft = foot.TransformPoint(center + new Vector3(-x, -y, z));
-        Vector3 bottomRight = foot.TransformPoint(center + new Vector3(-x, -y, -z));
-        return Mathf.Min(topLeft.y, topRight.y, bottomLeft.y, bottomRight.y);
-    }
+    // private float getBottomMostPointOnFoot(Transform foot, Vector3 center)
+    // {
+    //     float x = feetBozSize.x / 2;
+    //     float y = feetBozSize.y / 2;
+    //     float z = feetBozSize.z / 2;
+    //     Vector3 topLeft = foot.TransformPoint(center + new Vector3(x, -y, z));
+    //     Vector3 topRight = foot.TransformPoint(center + new Vector3(x, -y, -z));
+    //     Vector3 bottomLeft = foot.TransformPoint(center + new Vector3(-x, -y, z));
+    //     Vector3 bottomRight = foot.TransformPoint(center + new Vector3(-x, -y, -z));
+    //     return Mathf.Min(topLeft.y, topRight.y, bottomLeft.y, bottomRight.y);
+    // }
 
-    private float getVerticalOffset()
-    {
-        // ClearGizmos();
-        Transform leftFoot = kinChar.boneToCollider[(int)Bone_LeftFoot].transform;
-        Transform rightFoot = kinChar.boneToCollider[(int)Bone_RightFoot].transform;
-        float minPointOnFoot = Mathf.Min(getBottomMostPointOnFoot(leftFoot, leftfootColliderCenter), getBottomMostPointOnFoot(rightFoot, rightfootColliderCenter));
-        Transform leftToe = kinChar.boneToTransform[(int)Bone_LeftToe];
-        Transform rightToe = kinChar.boneToTransform[(int)Bone_RightToe];
-        float minToeY = Mathf.Min(leftToe.position.y, rightToe.position.y) - toeColliderRadius;
-        float maxGroundPenetration = Mathf.Max(0f, groundColliderY - Mathf.Min(minPointOnFoot , minToeY));
-        //Debug.Log($"minToeY: {minToeY} minPointOnFoot: {minPointOnFoot} maxGroundPenetration: {maxGroundPenetration}");
-        return maxGroundPenetration;
-    }
+    // private float getVerticalOffset()
+    // {
+    //     // ClearGizmos();
+    //     Transform leftFoot = kinChar.boneToCollider[(int)Bone_LeftFoot].transform;
+    //     Transform rightFoot = kinChar.boneToCollider[(int)Bone_RightFoot].transform;
+    //     float minPointOnFoot = Mathf.Min(getBottomMostPointOnFoot(leftFoot, leftfootColliderCenter), getBottomMostPointOnFoot(rightFoot, rightfootColliderCenter));
+    //     Transform leftToe = kinChar.boneToTransform[(int)Bone_LeftToe];
+    //     Transform rightToe = kinChar.boneToTransform[(int)Bone_RightToe];
+    //     float minToeY = Mathf.Min(leftToe.position.y, rightToe.position.y) - toeColliderRadius;
+    //     float maxGroundPenetration = Mathf.Max(0f, groundColliderY - Mathf.Min(minPointOnFoot , minToeY));
+    //     //Debug.Log($"minToeY: {minToeY} minPointOnFoot: {minPointOnFoot} maxGroundPenetration: {maxGroundPenetration}");
+    //     return maxGroundPenetration;
+    // }
 
     public float gizmoSphereRad = .01f;
 
@@ -920,27 +922,43 @@ public class MLAgent : Agent
             }
         }
     }
-
     private void debugPrintActions()
     {
         bool actionsAre6D = _config.actionRotType == ActionRotationType.SixD;
         StringBuilder debugStr = new StringBuilder();
         int actionIdx = 0;
-        MotionMatchingAnimator.Bones[] fullDOFBonesToUse = _config.networkControlsAllJoints ? extendedfullDOFBones : fullDOFBones;
-        for (int i = 0; i < fullDOFBonesToUse.Length; i++)
+        Bones[] DOFBonesToUse = DOFBones;
+        for (int i = 0; i < DOFBonesToUse.Length; i++)
         {
-            MotionMatchingAnimator.Bones bone = fullDOFBonesToUse[i];
-            Vector3 output = new Vector3(prevActionOutput[actionIdx], prevActionOutput[actionIdx + 1], prevActionOutput[actionIdx + 2]);
-            debugStr.Append($"{bone.ToString().Substring(5)}: {output} " + (actionsAre6D ? $"{ new Vector3(prevActionOutput[actionIdx + 3], prevActionOutput[actionIdx + 4], prevActionOutput[actionIdx + 5])} " : ""));
-            actionIdx += actionsAre6D ? 6 : 3;
+            Bones bone = DOFBonesToUse[i];
+            int boneIdx = (int) bone;
+            StringBuilder boneString =  new StringBuilder();
+            boneString.Append($"{bone.ToString().Substring(5)}: ");
+
+            ArticulationBody ab = simChar.boneToArtBody[boneIdx];
+            ArticulationDrive[] drives = new ArticulationDrive[]{ab.xDrive, ab.yDrive, ab.zDrive};
+            for (int j = 0; j < 3; j++)
+            {
+                ArticulationDrive drive = drives[j];
+                float range = drive.upperLimit - drive.lowerLimit;
+                if (range == 0)
+                    continue;
+
+                float output = smoothedActions[actionIdx];
+                boneString.Append($"{output:0.00} ");
+                actionIdx++;
+            }
+            // Vector3 output = new Vector3(prevActionOutput[actionIdx], prevActionOutput[actionIdx + 1], prevActionOutput[actionIdx + 2]);
+            debugStr.Append(boneString.ToString());
+            // actionIdx += actionsAre6D ? 6 : 3;
         }
-        MotionMatchingAnimator.Bones[] limitedDOFBonesToUse = _config.networkControlsAllJoints ? extendedLimitedDOFBones : limitedDOFBones;
-        for (int i = 0; i < limitedDOFBonesToUse.Length; i++)
-        {
-            MotionMatchingAnimator.Bones bone = limitedDOFBonesToUse[i];
-            debugStr.Append($"{bone.ToString().Substring(5)}: {prevActionOutput[actionIdx]} | {smoothedActions[actionIdx]} ");
-            actionIdx += 1;
-        }
+        // Bones[] limitedDOFBonesToUse = limitedDOFBones;
+        // for (int i = 0; i < limitedDOFBonesToUse.Length; i++)
+        // {
+        //     Bones bone = limitedDOFBonesToUse[i];
+        //     debugStr.Append($"{bone.ToString().Substring(5)}: {prevActionOutput[actionIdx]} | {smoothedActions[actionIdx]} ");
+        //     actionIdx += 1;
+        // }
         Debug.Log(debugStr.ToString());
     }
     private void OnGUI()

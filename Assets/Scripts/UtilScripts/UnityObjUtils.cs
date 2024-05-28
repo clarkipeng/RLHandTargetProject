@@ -1,6 +1,6 @@
 using UnityEngine;
 using System;
-using static MotionMatchingAnimator.Bones;
+using static MLAgent.Bones;
 
 public static class UnityObjUtils
 {
@@ -86,12 +86,12 @@ public static class UnityObjUtils
 
     }
 
-    public static void getSixPointsOnCollider(GameObject obj, ref Vector3[] outputs, MotionMatchingAnimator.Bones bone)
+    public static void getSixPointsOnCollider(GameObject obj, ref Vector3[] outputs, MLAgent.Bones bone)
     {
-        if (bone == Bone_LeftFoot || bone == Bone_RightFoot)
-            getSixPointsOnBox(obj, ref outputs);
-        else
+        if (bone == Bone_UpperArm || bone == Bone_LowerArm)
             getSixPointsOnCapsule(obj, ref outputs);
+        else
+            getSixPointsOnBox(obj, ref outputs);
 
     }
 

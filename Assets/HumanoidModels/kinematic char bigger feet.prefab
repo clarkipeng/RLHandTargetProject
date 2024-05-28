@@ -5,6 +5,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 2
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: -9085751053716223434, guid: 1e29fa05731a18e4c9bc461144ee727c, type: 3}
@@ -1008,6 +1009,7 @@ PrefabInstance:
       value: -90
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_AddedGameObjects: []
   m_SourcePrefab: {fileID: 100100000, guid: 1e29fa05731a18e4c9bc461144ee727c, type: 3}
 --- !u!4 &86186178978172581 stripped
 Transform:
@@ -1629,6 +1631,7 @@ MonoBehaviour:
   synchronization_enabled: 1
   drawGizmos: 1
   show_traj_markers: 1
+  lockTo60hz: 0
 --- !u!114 &6572924355493366906
 MonoBehaviour:
   m_ObjectHideFlags: 0

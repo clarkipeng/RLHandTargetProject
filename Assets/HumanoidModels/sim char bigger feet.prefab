@@ -5,6 +5,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 2
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: -9085751053716223434, guid: dcb5ccfbc78fb0342a553af36bf4dcec, type: 3}
@@ -877,7 +878,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: dcb5ccfbc78fb0342a553af36bf4dcec, type: 3}
       propertyPath: m_Name
-      value: sim char bigger feet))
+      value: sim char bigger feet
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: dcb5ccfbc78fb0342a553af36bf4dcec, type: 3}
       propertyPath: m_Layer
@@ -1368,6 +1369,7 @@ PrefabInstance:
       value: -0.70710677
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_AddedGameObjects: []
   m_SourcePrefab: {fileID: 100100000, guid: dcb5ccfbc78fb0342a553af36bf4dcec, type: 3}
 --- !u!1 &29959731425015243 stripped
 GameObject:
@@ -3775,7 +3777,6 @@ MonoBehaviour:
   - {fileID: 5588591918970013765}
   debug: 0
   boneToCollider: []
-  setDriveTargetVels: 0
 --- !u!114 &2935141443286014372
 MonoBehaviour:
   m_ObjectHideFlags: 0

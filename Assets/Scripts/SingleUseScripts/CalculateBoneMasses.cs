@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using static MotionMatchingAnimator.Bones;
+using static MLAgent.Bones;
 public class CalculateBoneMasses : MonoBehaviour
 {
 
@@ -14,7 +14,7 @@ public class CalculateBoneMasses : MonoBehaviour
     void setAllArticulationBodyMasses()
     {
         initBoneColliders();
-        int n = 23; // num bones
+        int n = 12; // num bones
         float [][] bone_to_points = new float[n][];
         gizmo_points = new List<Vector3>();
 
@@ -40,7 +40,7 @@ public class CalculateBoneMasses : MonoBehaviour
                         int num_collisions = 0;
                         for (int i = 1; i < n; i++)
                         {
-                            int collided = checkCollision(point, (MotionMatchingAnimator.Bones)i) ? 1 : 0;
+                            int collided = checkCollision(point, (MLAgent.Bones)i) ? 1 : 0;
                             num_collisions += collided;
                             bone_collided[i] = collided;
                         }
@@ -60,7 +60,7 @@ public class CalculateBoneMasses : MonoBehaviour
         {
             float[] weight_dist = bone_to_points[i];
             float total_collisions = weight_dist[0] + weight_dist[1] + weight_dist[2] + weight_dist[3] + weight_dist[4];
-            float full_weight = getFullWeight((MotionMatchingAnimator.Bones)i);
+            float full_weight = getFullWeight((MLAgent.Bones)i);
             float final_weight = total_collisions > 0 ? (weight_dist[0] / total_collisions) * full_weight +
                                   (weight_dist[1] / total_collisions) * .5f * full_weight +
                                   (weight_dist[2] / total_collisions) * .33f * full_weight +
@@ -68,7 +68,7 @@ public class CalculateBoneMasses : MonoBehaviour
                                   (weight_dist[4] / total_collisions) * .2f * full_weight
                                   : full_weight;
 
-            Debug.Log($"Bone {(MotionMatchingAnimator.Bones)i} total_collisions: {total_collisions}  full weight: {full_weight} | final_weight: {final_weight}");
+            Debug.Log($"Bone {(MLAgent.Bones)i} total_collisions: {total_collisions}  full weight: {full_weight} | final_weight: {final_weight}");
             final_unfiltered_mass += full_weight;
             final_mass += final_weight;
             ArticulationBody ab = bone_to_transform[i].GetComponent<ArticulationBody>();
@@ -81,18 +81,18 @@ public class CalculateBoneMasses : MonoBehaviour
     }
     public int AVG_HUMAN_DENSITY = 985; // kg / m^3
 
-    float getFullWeight(MotionMatchingAnimator.Bones bone)
+    float getFullWeight(MLAgent.Bones bone)
     {
         float volume;
-        if (bone == Bone_LeftFoot || bone == Bone_RightFoot)
-        {
-            BoxCollider box = bone_to_collider[(int)bone].GetComponent<BoxCollider>();
-            volume = box.size.x * box.size.y * box.size.z;
-        }
-        else
+        if (bone == Bone_UpperArm || bone == Bone_LowerArm)
         {
             CapsuleCollider caps = bone_to_collider[(int)bone].GetComponent<CapsuleCollider>();
             volume = GeoUtils.GetCapsuleVolume(caps);
+        }
+        else
+        {
+            BoxCollider box = bone_to_collider[(int)bone].GetComponent<BoxCollider>();
+            volume = box.size.x * box.size.y * box.size.z;
         }
         return volume * AVG_HUMAN_DENSITY;
 
@@ -101,28 +101,30 @@ public class CalculateBoneMasses : MonoBehaviour
 
     void initBoneColliders()
     {
-        int nbodies = 23;
+        int nbodies = 12;
         bone_to_collider = new GameObject[nbodies];
         for (int i = 0; i < nbodies; i++)
         {
-            if (i == (int)Bone_LeftFoot || i == (int)Bone_RightFoot)  
-                bone_to_collider[i] = UnityObjUtils.getChildBoxCollider(bone_to_transform[i].gameObject);
+            if (i == (int)Bone_UpperArm || i == (int)Bone_LowerArm)  
+                bone_to_collider[i] = bone_to_transform[i].gameObject;
+                // bone_to_collider[i] = UnityObjUtils.getChildCapsuleCollider(bone_to_transform[i].gameObject);
             else
-                bone_to_collider[i] = UnityObjUtils.getChildCapsuleCollider(bone_to_transform[i].gameObject);
+                bone_to_collider[i] = bone_to_transform[i].gameObject;
+                // bone_to_collider[i] = UnityObjUtils.getChildBoxCollider(bone_to_transform[i].gameObject);
         }
     }
 
-    private bool checkCollision(Vector3 point, MotionMatchingAnimator.Bones bone)
+    private bool checkCollision(Vector3 point, MLAgent.Bones bone)
     {
-        if (bone == Bone_LeftFoot || bone == Bone_RightFoot)
-        {
-            BoxCollider box = bone_to_collider[(int)bone].GetComponent<BoxCollider>();
-            return box.checkCollision(point);
-        }
-        else
+        if (bone == Bone_UpperArm || bone == Bone_LowerArm)
         {
             CapsuleCollider caps = bone_to_collider[(int)bone].GetComponent<CapsuleCollider>();
             return caps.checkCollision(point);
+        }
+        else
+        {
+            BoxCollider box = bone_to_collider[(int)bone].GetComponent<BoxCollider>();
+            return box.checkCollision(point);
         }
     }
     public bool draw_gizmos = false;

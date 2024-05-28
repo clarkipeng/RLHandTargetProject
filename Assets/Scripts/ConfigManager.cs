@@ -65,21 +65,33 @@ public class ConfigManager : MonoBehaviour
     public float simulation_run_back_speed = 2f; // 2.5f
     // PROJECTILE HYPER PARAMS
     [Header("PROJECTILE SETTINGS")]
-    public bool projectileTraining = true;
-    public int maxNumProjectiles = 10;
-    public float LAUNCH_FREQUENCY = 1f;
-    public  float LAUNCH_RADIUS = .66f;
-    public  float LAUNCH_SPEED = 5f;
+    public int maxNumProjectiles = 15;
+    public float LAUNCH_FREQUENCY = 3f;
+    public float PROJECTILE_RADIUS = 3f;
     public float PROJECTILE_MAX_WEIGHT = 10f;
     public float PROJECTILE_MIN_WEIGHT = 1f;
-    public float PROJECTILE_SCALE = 1f;
+    public float PROJECTILE_MAX_HEIGHT = 10f;
+    public float PROJECTILE_MIN_HEIGHT = 1.5f;
+    public float PROJECTILE_MAX_SCALE = 1.0f;
+    public float PROJECTILE_MIN_SCALE = 0.5f;
+    public float PROJECTILE_SCALE = 2f;
+    public float PROJECTILE_SPAWNCENTER_X = -17f;
+    // public  float LAUNCH_SPEED = 5f;
+    // TARGET HYPER PARAMS
+    [Header("TARGET SETTINGS")]
+    public float TARGET_RADIUS = 1f;
+    public float TARGET_SPAWN_RADIUS = 1f;
+    public float TARGET_SPAWNCENTER_X = 1f;
+    public float TARGET_SPAWNCENTER_Y = 3f;
+    public float TARGET_SPAWNCENTER_Z = 3f;
     [Header("ARTICULATION BODY SETTINGS")]
     // Art body params
-    public string[] boneToNames = new string[23];
-    public  float[] boneToStiffness = new float[23];
+    public float forceLimit = 200;
+    public float damping = 100;
+
+    public string[] boneToNames = new string[12];
+    public  float[] boneToStiffness = new float[12];
     public List<MusclePower> MusclePowers;
-    public float forceLimit;
-    public float damping;
     public bool dampingScalesWithStiffness;
     public float pGainMultiplier = 1f;
     public bool rewardsInGUI;
@@ -88,10 +100,14 @@ public class ConfigManager : MonoBehaviour
     public bool resetKinCharOnEpisodeEnd = false;
     public bool selfCollision;
 
+    //new
+    // [Header("Environment settings")]
+    // public float ARM_VERT_OFFSET = 10f;
+
     [System.Serializable]
     public class MusclePower
     {
-        public MotionMatchingAnimator.Bones Bone;
+        public MLAgent.Bones Bone;
         public Vector3 PowerVector;
     }
 
@@ -138,7 +154,7 @@ public class ConfigManager : MonoBehaviour
     public void initBoneToString()
     {
         for (int i = 0; i < 23; i++)
-            boneToNames[i]  = ((MotionMatchingAnimator.Bones)i).ToString();
+            boneToNames[i]  = ((MLAgent.Bones)i).ToString();
     }
 
     [ContextMenu("Write out config file to current config name ")]

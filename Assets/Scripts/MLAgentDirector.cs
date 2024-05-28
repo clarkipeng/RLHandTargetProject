@@ -41,13 +41,14 @@ public class MLAgentDirector : MonoBehaviour
     private MLAgent createMLAgent()
     {
         GameObject obj;
-        bool actionsAre6D = _config.actionRotType == ActionRotationType.SixD;
-        if (_config.networkControlsAllJoints)
-            obj = actionsAre6D ? Instantiate(modelAllJoints6DAgent) : _config.addOrientationDataToObsState ? Instantiate(modelAgentAllJointsWOrientData) : Instantiate(modelAllJoints3DAgent);
-        else
-            obj = actionsAre6D ? Instantiate(model6DAgent) : _config.addOrientationDataToObsState ? Instantiate(modelAgentWithOrientationData) : Instantiate(modelAgent);
-        MLAgent agent = obj.GetComponent<MLAgent>();
+        obj = Instantiate(modelAgent);
         obj.SetActive(true);
+        // bool actionsAre6D = _config.actionRotType == ActionRotationType.SixD;
+        // if (_config.networkControlsAllJoints)
+        //     obj = actionsAre6D ? Instantiate(modelAllJoints6DAgent) : _config.addOrientationDataToObsState ? Instantiate(modelAgentAllJointsWOrientData) : Instantiate(modelAllJoints3DAgent);
+        // else
+        //     obj = actionsAre6D ? Instantiate(model6DAgent) : _config.addOrientationDataToObsState ? Instantiate(modelAgentWithOrientationData) : Instantiate(modelAgent);
+        MLAgent agent = obj.GetComponent<MLAgent>();
         return agent;
     }
     void FixedUpdate()

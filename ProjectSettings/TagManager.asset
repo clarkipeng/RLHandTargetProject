@@ -5,6 +5,10 @@ TagManager:
   serializedVersion: 2
   tags:
   - CinemachineTarget
+  - projectile
+  - target
+  - Arm
+  - Hand
   layers:
   - Default
   - TransparentFX
