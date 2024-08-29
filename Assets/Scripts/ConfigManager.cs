@@ -24,11 +24,11 @@ public class ConfigManager : MonoBehaviour
     public string loadFromFilePath = "";
 
     [Header("INFERENCE SETTINGS")]
-    public bool clampKinCharToSim;
-    public bool userControl;
-    public float clampingMaxDistance = .5f;
+    // public bool clampKinCharToSim;
+    // public bool userControl;
+    // public float clampingMaxDistance = .5f;
     public bool useSkinnedMesh = false;
-    public bool doNotRenderKinChar = false;
+    // public bool doNotRenderKinChar = false;
 
     [Header("PHYSICAL CHARACTER SETTINGS")]
     public int solverIterations = 32;
@@ -38,9 +38,9 @@ public class ConfigManager : MonoBehaviour
     public bool noStrafing = false;
     public bool setRotsDirectly = false;
     public bool outputIsBase = false;
-    public ActionRotationType actionRotType;
+    // public ActionRotationType actionRotType;
     public float alphaForExpMap = 120f;
-    public SixDRotationMethod sixDRotMethod;
+    // public SixDRotationMethod sixDRotMethod;
     public bool networkControlsAllJoints = false;
     public bool fullRangeEulerOutputs;
     public bool resolveSimReferenceFrameWithSimRotation = false;
@@ -52,20 +52,20 @@ public class ConfigManager : MonoBehaviour
     public int MAX_EPISODE_LENGTH_SECONDS = 20;
     public float ACTION_STIFFNESS_HYPERPARAM = .2f;
     [Header("KINEMATIC CHARACTER SETTINGS")]
-    public float prob_to_change_inputs = .001f;
-    public bool useCustomInputGenerator = false;
-    public float inputGeneratorHalflife = .5f;
-    public float simulationVelocityHalflife = .27f;
-    public float simulation_rotation_halflife = .27f;
-    public bool walkOnly = false;
-    public float searchTime = .2f;
-    public float MAX_WANDERING_RADIUS = 50f;
-    public float simulation_run_fwrd_speed = 3f; // 4.5f
-    public float simulation_run_side_speed = 2.5f; // 3f
-    public float simulation_run_back_speed = 2f; // 2.5f
+    // public float prob_to_change_inputs = .001f;
+    // public bool useCustomInputGenerator = false;
+    // public float inputGeneratorHalflife = .5f;
+    // public float simulationVelocityHalflife = .27f;
+    // public float simulation_rotation_halflife = .27f;
+    // public bool walkOnly = false;
+    // public float searchTime = .2f;
+    // public float MAX_WANDERING_RADIUS = 50f;
+    // public float simulation_run_fwrd_speed = 3f; // 4.5f
+    // public float simulation_run_side_speed = 2.5f; // 3f
+    // public float simulation_run_back_speed = 2f; // 2.5f
     // PROJECTILE HYPER PARAMS
     [Header("PROJECTILE SETTINGS")]
-    public int maxNumProjectiles = 15;
+    public int maxNumProjectiles = 1;
     public float LAUNCH_FREQUENCY = 3f;
     public float PROJECTILE_RADIUS = 3f;
     public float PROJECTILE_MAX_WEIGHT = 10f;
@@ -76,6 +76,7 @@ public class ConfigManager : MonoBehaviour
     public float PROJECTILE_MIN_SCALE = 0.5f;
     public float PROJECTILE_SCALE = 2f;
     public float PROJECTILE_SPAWNCENTER_X = -17f;
+    public bool ADD_PROJECTILE_TOUCH = true;
     // public  float LAUNCH_SPEED = 5f;
     // TARGET HYPER PARAMS
     [Header("TARGET SETTINGS")]
@@ -86,6 +87,7 @@ public class ConfigManager : MonoBehaviour
     public float TARGET_SPAWNCENTER_Z = 3f;
     [Header("ARTICULATION BODY SETTINGS")]
     // Art body params
+    public bool selfCollision;
     public float forceLimit = 200;
     public float damping = 100;
 
@@ -95,10 +97,9 @@ public class ConfigManager : MonoBehaviour
     public bool dampingScalesWithStiffness;
     public float pGainMultiplier = 1f;
     public bool rewardsInGUI;
-    [Header("UNTOUCHED / LEGACY")]
-    public bool useCapsuleFeet;
-    public bool resetKinCharOnEpisodeEnd = false;
-    public bool selfCollision;
+    // [Header("UNTOUCHED / LEGACY")]
+    // public bool useCapsuleFeet;
+    // public bool resetKinCharOnEpisodeEnd = false;
 
     //new
     // [Header("Environment settings")]

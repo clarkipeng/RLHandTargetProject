@@ -4,11 +4,7 @@ public class MLAgentDirector : MonoBehaviour
 {
     public int numAgents = 5;
     public GameObject modelAgent;
-    public GameObject modelAgentWithOrientationData;
-    public GameObject model6DAgent;
-    public GameObject modelAllJoints6DAgent;
-    public GameObject modelAllJoints3DAgent;
-    public GameObject modelAgentAllJointsWOrientData;
+    public GameObject modelAgentAddTouchData;
     private MLAgent[] agents;
     public int reportMeanRewardEveryNSteps = 10000;
     private int curStep = 0;
@@ -41,7 +37,10 @@ public class MLAgentDirector : MonoBehaviour
     private MLAgent createMLAgent()
     {
         GameObject obj;
-        obj = Instantiate(modelAgent);
+        if (_config.ADD_PROJECTILE_TOUCH)
+            obj = Instantiate(modelAgentAddTouchData);
+        else
+            obj = Instantiate(modelAgent);
         obj.SetActive(true);
         // bool actionsAre6D = _config.actionRotType == ActionRotationType.SixD;
         // if (_config.networkControlsAllJoints)

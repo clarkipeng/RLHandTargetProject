@@ -64,8 +64,13 @@ public class MLAgent : Agent
     public int reportMeanRewardEveryNSteps = 10000;
     private SimCharController SimulationCharController;
     public static int nbodies = 12;
+
     private int curFixedUpdate = -1;
     private int lastSimCharTeleportFixedUpdate = -1;
+
+    private bool releasedOnce = false;
+    private bool touchedOnce = false;
+    private float timeSinceTouch = 0, timeSinceRelease = 0;
 
     float[] prevActionOutput;
     float[] smoothedActions;
@@ -81,7 +86,7 @@ public class MLAgent : Agent
     public enum Bones
     {
         Bone_Shoulder = 0,
-        Bone_UpperArm = 1,
+        Bone_UpperArm = 1, 
         Bone_LowerArm = 2,
         Bone_Palm = 3,
         Bone_Thumb1 = 4,
@@ -153,21 +158,24 @@ public class MLAgent : Agent
         Quaternion[] curRotations = bone_rotations;
         Bones[] DOFBonesToUse = DOFBones;
         int actionIdx = 0;
-        switch (_config.actionRotType)
-        {
-            case ActionRotationType.Euler:
-                applyActionsAsEulerRotations(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
-                break;
-            // case ActionRotationType.AxisAngle:
-            //     applyActionsAsAxisAngleRotations(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
-            //     break;
-            // case ActionRotationType.SixD:
-            //     applyActionsWith6DRotations(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
-            //     break; 
-            // case ActionRotationType.Exp:
-            //     applyActionsAsExp(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
-            //     break;
-        }
+
+        applyActionsAsEulerRotations(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
+        // switch (_config.actionRotType)
+        // {
+        //     case ActionRotationType.Euler:
+        //         applyActionsAsEulerRotations(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
+        //         break;
+        //     // case ActionRotationType.AxisAngle:
+        //     //     applyActionsAsAxisAngleRotations(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
+        //     //     break;
+        //     // case ActionRotationType.SixD:
+        //     //     applyActionsWith6DRotations(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
+        //     //     break; 
+        //     // case ActionRotationType.Exp:
+        //     //     applyActionsAsExp(smoothedActions, curRotations, DOFBonesToUse, ref actionIdx);
+        //     //     break;
+        // }
+
         Bones[] openloopBonesBonesToUse = openloopBones;
         for (int i = 0; i < openloopBonesBonesToUse.Length; i++)
         {
@@ -189,37 +197,6 @@ public class MLAgent : Agent
         prevActionOutput = actionBuffers.ContinuousActions.Array;
         applyActions(true);
     }
-    private void applyActionsAsExp(float[] finalActions, Quaternion[] curRotations, Bones[] DOFBonesToUse, ref int actionIdx)
-    {
-        for (int i = 0; i < DOFBonesToUse.Length; i++)
-        {
-            int boneIdx = (int)DOFBonesToUse[i];
-            ArticulationBody ab = simChar.boneToArtBody[boneIdx];
-            Vector3 output = new Vector3(finalActions[actionIdx], finalActions[actionIdx + 1], finalActions[actionIdx + 2]);
-            actionIdx += 3;
-            Quaternion offset = MathUtils.quat_exp(output * _config.alphaForExpMap / 2f);
-            Quaternion final = _config.setRotsDirectly ? offset : _config.outputIsBase ? curRotations[boneIdx] * offset : offset * curRotations[boneIdx];
-            ab.SetDriveRotation(final);
-        }
-
-    }
-
-    private void applyActionsAsAxisAngleRotations(float[] finalActions, Quaternion[] curRotations, Bones[] DOFBonesToUse, ref int actionIdx)
-    {
-        for (int i = 0; i < DOFBonesToUse.Length; i++)
-        {
-            int boneIdx = (int)DOFBonesToUse[i];
-            ArticulationBody ab = simChar.boneToArtBody[boneIdx];
-            Vector3 output = new Vector3(finalActions[actionIdx], finalActions[actionIdx + 1], finalActions[actionIdx + 2]) * 120;
-            actionIdx += 3;
-            float angle = output.magnitude;
-            Quaternion offset = Quaternion.AngleAxis(angle, output);
-            Quaternion final = _config.setRotsDirectly ? offset : _config.outputIsBase ? curRotations[boneIdx] * offset : offset * curRotations[boneIdx];
-            ab.SetDriveRotation(final);
-        }
-
-    }
-
     private void applyActionsAsEulerRotations(float[] finalActions, Quaternion[] curRotations, Bones[] DOFBonesToUse, ref int actionIdx)
     {
         for (int i = 0; i < DOFBonesToUse.Length; i++)
@@ -258,42 +235,6 @@ public class MLAgent : Agent
         }
     }
 
-    private void applyActionsWith6DRotations(float[] finalActions, Quaternion[] curRotations, Bones[] DOFBonesToUse, ref int actionIdx)
-    {
-        for (int i = 0; i < DOFBonesToUse.Length; i++)
-        {
-            int boneIdx = (int)DOFBonesToUse[i];
-            ArticulationBody ab = simChar.boneToArtBody[boneIdx];
-            Vector3 outputV1 = new Vector3(finalActions[actionIdx], finalActions[actionIdx + 1], finalActions[actionIdx + 2]);
-            Vector3 outputV2 = new Vector3(finalActions[actionIdx + 3], finalActions[actionIdx + 4], finalActions[actionIdx + 5]);
-            actionIdx += 6;
-            Quaternion newTargetRot;
-            //Quaternion networkAdjustment = ArtBodyUtils.From6DRepresentation(outputV1, outputV2, ref initialRotInverses[i], _config.adjust6DRots);
-            if (_config.sixDRotMethod == SixDRotationMethod.TRSTimesMatrix)
-            {
-                Matrix4x4 networkAdjustment = MathUtils.MatrixFrom6DRepresentation(outputV1, outputV2);
-                Matrix4x4 rotationMatrix = Matrix4x4.TRS(Vector3.zero, curRotations[boneIdx].normalized, Vector3.one);
-                Matrix4x4 finalRot = networkAdjustment * rotationMatrix;
-                newTargetRot = Quaternion.LookRotation(finalRot.GetColumn(2), finalRot.GetColumn(1));
-            }
-            else if (_config.sixDRotMethod == SixDRotationMethod.RotateObjectWithOrthonormalVector)
-            {
-                Quaternion offset = MathUtils.RotateObjectWithOrthonormalVector(outputV1, outputV2);
-                newTargetRot = _config.setRotsDirectly ? offset : _config.outputIsBase ? curRotations[boneIdx] * offset : offset * curRotations[boneIdx];
-            }
-            else if (_config.sixDRotMethod == SixDRotationMethod.MatrixToQuat)
-            {
-                Quaternion offset = MathUtils.QuatFrom6DRepresentation(outputV1, outputV2);
-                newTargetRot = _config.setRotsDirectly ? offset : _config.outputIsBase ? curRotations[boneIdx] * offset : offset * curRotations[boneIdx];
-            }
-            else
-                newTargetRot = Quaternion.identity;
-
-            ab.SetDriveRotation(newTargetRot);
-        }
-    }
-
-
     public override void Heuristic(in ActionBuffers actionsout)
     {
 
@@ -321,6 +262,9 @@ public class MLAgent : Agent
     private Vector3 feetBozSize;
     private Vector3 leftfootColliderCenter;
     private Vector3 rightfootColliderCenter;
+
+    public GameObject camController;
+    private CameraWASDController playerController;
     void customInit()
     {
         if (kinUseDebugMats || simUseDebugMats)
@@ -430,11 +374,13 @@ public class MLAgent : Agent
         bool isInference = behaviorParameters.BehaviorType == Unity.MLAgents.Policies.BehaviorType.InferenceOnly;
         if (isInference)
         {
-            GameObject camTarget = new GameObject("PlayerCamTarget");
-            PlayerCamTarget playerCamTarget = camTarget.AddComponent<PlayerCamTarget>();
-            playerCamTarget.init(simChar.trans);
-            thirdPersonCam.gameObject.SetActive(true);
-            thirdPersonCam.Follow = camTarget.transform;
+            // GameObject camController = new GameObject("CameraWASDController");
+            // var camera = camController.AddComponent<Camera>();
+            // camera.enabled = true;
+            playerController = camController.GetComponent<CameraWASDController>();
+            playerController.target = curProjectile;
+            // thirdPersonCam.gameObject.SetActive(true);
+            // thirdPersonCam.Follow = camTarget.transform;
             // MMScript.playerCamTarget = playerCamTarget;
             // if (_config.userControl)
             //     MMScript.gen_inputs = false;
@@ -528,6 +474,7 @@ public class MLAgent : Agent
     Vector3 prevProjPos, curProjPos, projVel, curTargetPos;
     private void UpdateProjectileTarget()
     {
+        
         if (Time.time - lastProjectileLaunchtime < _config.LAUNCH_FREQUENCY)
             return;
         lastProjectileLaunchtime = Time.time;
@@ -544,6 +491,13 @@ public class MLAgent : Agent
             curProjectile = Instantiate(projectilePrefab, Vector3.zero, Quaternion.identity);
             curTarget = Instantiate(targetPrefab, Vector3.zero, Quaternion.identity);
 
+            releasedOnce = touchedOnce = false;
+            timeSinceTouch = timeSinceRelease = 0;
+
+            bool isInference = behaviorParameters.BehaviorType == Unity.MLAgents.Policies.BehaviorType.InferenceOnly;
+            if (isInference)
+                playerController.target = curProjectile;
+
             var projectileRB = curProjectile.GetComponent<Rigidbody>();
             curProjectile.transform.localScale = Vector3.one * UnityEngine.Random.Range(_config.PROJECTILE_MIN_SCALE, _config.PROJECTILE_MAX_SCALE);
             projectileRB.mass = UnityEngine.Random.Range(_config.PROJECTILE_MIN_WEIGHT, _config.PROJECTILE_MAX_WEIGHT);
@@ -556,7 +510,10 @@ public class MLAgent : Agent
             // targetCollider.radius = _config.TARGET_RADIUS;
             Vector3 targetPos = UnityEngine.Random.insideUnitSphere.normalized*_config.TARGET_SPAWN_RADIUS;
             targetPos += new Vector3(_config.TARGET_SPAWNCENTER_X, _config.TARGET_SPAWNCENTER_Y, _config.TARGET_SPAWNCENTER_Z);
+            targetPos[1] = Mathf.Max(0, targetPos[1]);
             curTarget.transform.position = targetPos;
+            
+
             
             prevProjPos = curProjPos = curProjectile.transform.position;
         }else{
@@ -702,63 +659,158 @@ public class MLAgent : Agent
         return;
     }
     // returns TRUE if episode ended
-    private void calcProjectileTargetReward(out double posReward, out double velReward){
+    private void calcProjectileTargetReward(out double posReward){
         if (!curTarget || !curProjectile){
-            posReward = -1;
-            velReward = -1;
+            posReward = 0;
             return;
         }
         Vector3 distance = curTarget.transform.position - curProjectile.transform.position;
-        posReward = - distance.magnitude / (new Vector3(_config.TARGET_SPAWNCENTER_X - _config.PROJECTILE_SPAWNCENTER_X, _config.TARGET_SPAWNCENTER_Y, _config.TARGET_SPAWNCENTER_Z).magnitude);
-        velReward = (Vector3.Dot(distance,projVel)) / (distance.magnitude+1e-5) / (projVel.magnitude+1e-5);
+        posReward = 1000/distance.magnitude;
+        // velReward = (Vector3.Dot(distance,projVel)) / (distance.magnitude+1e-5) / (projVel.magnitude+1e-5);
     }
     private void calcProjectileAgentReward(bool handHit, bool armHit, int nHandHit, out double agentReward){
         agentReward = 0;
+        if (debug)
+            Debug.Log(nHandHit);
+        
         if (handHit){
-            agentReward = 20 + 60 * nHandHit;
+            agentReward = 5 + 10 * nHandHit;
         }
         else if (armHit){
-            agentReward = 60;
+            agentReward = 5;
         }
     }
-    // private void calcRotationReward(out double rotReward){
-    //     Vector3 angles = simChar.boneToTransform[(int) Bones.Bone_UpperArm].transform.rotation.eulerAngles;
-    //     rotReward = 0.01f * (180 - Mathf.Abs(angles[0])+Mathf.Abs(angles[0])+Mathf.Abs(angles[0]));
-    // }
-    // private void calcProjectileTargetReward(out double reward){
-    // }
+    private void calcRotationVelReward(out double reward){
+        reward = 0;
+        reward -= 5 * simChar.boneToArtBody[(int) Bones.Bone_UpperArm].angularVelocity.magnitude;
+        reward -= 0.5 * simChar.boneToArtBody[(int) Bones.Bone_LowerArm].angularVelocity.magnitude;
+        // reward -= 0.1 * simChar.boneToArtBody[(int) Bones.Bone_Palm].angularVelocity.magnitude;
+        if (debug)
+            Debug.Log(reward);
+    }
+    private void calcRotationPosReward(out double reward){
+        reward = 0;
+
+        float rot = 0;
+        var rotation = simChar.boneToArtBody[(int) Bones.Bone_UpperArm].jointPosition;
+        for(int i = 0; i<rotation.dofCount;i++){
+            float r = rotation[i];
+            rot += r*r;
+        }
+        reward -= 10 * Mathf.Sqrt(rot);
+
+        
+        rot = 0;
+        rotation = simChar.boneToArtBody[(int) Bones.Bone_LowerArm].jointPosition;
+        for(int i = 0; i<rotation.dofCount;i++){
+            float r = rotation[i];
+            rot += r*r;
+        }
+        reward -= 1 * Mathf.Sqrt(rot);
+
+        if (debug)
+            Debug.Log(reward);
+    }
+    // for holding only
     public bool calcAndSetRewards(bool groundHit, bool targetHit, bool handHit, bool armHit, int nHandHit)
     {
-        // bool heads1mApart;
-        // double velReward, posReward, localPoseReward, cmVelReward, fallFactor;
-        double posReward, velReward, agentReward;
-        // calcProjectileTargetReward(out posReward, out velReward);
-        calcProjectileAgentReward(handHit, armHit, nHandHit, out agentReward);
+        double posReward, rotReward, velReward, agentReward, timeReward;
+        if (handHit)
+        {
+            if (!touchedOnce)
+                timeSinceTouch = 0;
+            touchedOnce = true;
+            timeSinceTouch += Time.fixedDeltaTime;
+        }
+        else if (touchedOnce)
+            if (!releasedOnce)
+                timeSinceRelease = 0;
+            releasedOnce = true;
+            timeSinceRelease += Time.fixedDeltaTime;
 
-        // finalReward = (float) (2*posReward + 1*velReward + agentReward);
-        finalReward = (float) (agentReward);
-        finalReward = finalReward/60f - 0.01f;
+        calcProjectileAgentReward(handHit, armHit, nHandHit, out agentReward);
+        calcRotationVelReward(out velReward);
+        calcRotationPosReward(out posReward);
+        finalReward = (float) (agentReward + velReward + posReward);
+        finalReward = finalReward/60f;
+
         if (targetHit){
             if (debug)
                 Debug.Log("TARGET HIT");
-            finalReward = 1000;
+            finalReward = 0;
             SetReward(finalReward);
             return true;
         }
         if (groundHit){
             if (debug)
                 Debug.Log("GROUND HIT");
-            finalReward = -100;
+            finalReward = 0;
             SetReward(finalReward);
             return true;
         }
-        // updateMeanReward(finalReward);
         AddReward(finalReward);
-        // Debug.Log($"posReward {posReward}");
-        // Debug.Log($"velReward {velReward}");
-        // Debug.Log(GetCumulativeReward());
         return false;
     }
+    // public bool calcAndSetRewards(bool groundHit, bool targetHit, bool handHit, bool armHit, int nHandHit)
+    // {
+    //     double posReward, rotReward, velReward, agentReward, timeReward;
+        // float timeSinceTouch, timeSinceRelease;
+        // if (handHit)
+        // {
+        //     if (!touchedOnce)
+        //         timeSinceTouch = 0;
+        //     touchedOnce = true;
+        //     timeSinceTouch += Time.fixedDeltaTime;
+        // }
+        // else if (touchedOnce)
+        //     if (!releasedOnce)
+        //         timeSinceRelease = 0;
+        //     releasedOnce = true;
+        //     timeSinceRelease += Time.fixedDeltaTime;
+
+    //     // calcProjectileAgentReward(handHit, armHit, nHandHit, out agentReward);
+    //     // calcRotationVelReward(out velReward);
+    //     // finalReward = (float) (agentReward + velReward);
+    //     // finalReward = finalReward/60f;
+
+    //     // timeReward = touchedOnce ? -10 * Mathf.Pow(timeSinceTouch,1.5f) : 0f;
+    //     // finalReward = (float) (agentReward + velReward + timeReward);
+
+    //     calcProjectileTargetReward(out posReward);
+
+    //     calcProjectileAgentReward(handHit, armHit, nHandHit, out agentReward);
+    //     calcRotationVelReward(out velReward);
+    //     calcRotationPosReward(out rotReward);
+    //     finalReward = (float) (posReward);
+    //     if (timeSinceTouch < 10)
+    //     {
+    //         finalReward += (float) (agentReward + velReward/2 + rotReward/5);
+    //     }
+    //     else if (timeSinceTouch>10 && timeSinceRelease==0) // just released
+    //     {
+    //         finalReward += 1;
+    //     }
+    //     finalReward = finalReward/60f;
+    //     if (debug)
+    //         Debug.Log(finalReward);
+    //     finalReward = Mathf.Clamp(finalReward, -10, 10);
+    //     if (targetHit){
+    //         if (debug)///
+    //             Debug.Log("TARGET HIT");
+    //         finalReward = 100 * Mathf.Min(timeSinceTouch, 10)/10;
+    //         SetReward(finalReward);
+    //         return true;
+    //     }
+    //     if (groundHit){
+    //         if (debug)
+    //             Debug.Log("GROUND HIT");
+    //         finalReward = 0;
+    //         SetReward(finalReward);
+    //         return true;
+    //     }
+    //     AddReward(finalReward);
+    //     return false;
+    // }
     float[] getState()
     {
         float[] state = new float[numObservations];
@@ -784,6 +836,14 @@ public class MLAgent : Agent
             state[state_idx++] = simChar.boneState[i];
         for (int i = 0; i < numActions; i++)
             state[state_idx++] = smoothedActions[i];
+
+        if (_config.ADD_PROJECTILE_TOUCH)
+        {
+            state[state_idx++] = (touchedOnce ? 1f : 0f);
+            state[state_idx++] = (releasedOnce ? 1f : 0f);
+            state[state_idx++] = (touchedOnce ? timeSinceTouch : -1f);
+            state[state_idx++] = (releasedOnce ? timeSinceRelease : -1f);
+        }
    
         if (state_idx != numObservations)
             throw new Exception($"State may not be properly intialized - length is {state_idx} after copying everything");
@@ -924,7 +984,7 @@ public class MLAgent : Agent
     }
     private void debugPrintActions()
     {
-        bool actionsAre6D = _config.actionRotType == ActionRotationType.SixD;
+        // bool actionsAre6D = _config.actionRotType == ActionRotationType.SixD;
         StringBuilder debugStr = new StringBuilder();
         int actionIdx = 0;
         Bones[] DOFBonesToUse = DOFBones;

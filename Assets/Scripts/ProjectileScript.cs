@@ -7,10 +7,10 @@ public class ProjectileScript : MonoBehaviour
     public bool hitTarget = false;
     public bool onArm = false;
     public bool onHand = false;
-    public int nOnHand = 0;
+    public int nOnHand;
     void Start()
     {
-        
+        nOnHand = 0;
     }
     void OnCollisionEnter(Collision other)
     {
@@ -21,8 +21,8 @@ public class ProjectileScript : MonoBehaviour
         }
         if (other.gameObject.tag == "Hand")
         { 
-            onHand = true;
             nOnHand++;
+            onHand = true;
         }
         if (other.gameObject.tag == "Arm")
         { 
@@ -34,8 +34,10 @@ public class ProjectileScript : MonoBehaviour
     {
         if (other.gameObject.tag == "Hand")
         { 
-            onHand = false;
             nOnHand--;
+            if (nOnHand ==0){
+                onHand = false;
+            }
         }
         if (other.gameObject.tag == "Arm")
         { 
