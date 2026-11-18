@@ -143,6 +143,14 @@ namespace Showcase
 
         static float Ease(float u) => u * u * (3f - 2f * u);
 
+        /// <summary>
+        /// The arm's size in meters as far as the lens is concerned. The training scene's arm is about 20 units
+        /// long; at that scale a physical lens has almost no depth of field, so focus distances are converted
+        /// to a real robot arm's scale before they reach the bokeh.
+        /// </summary>
+        public const float ArmMeters = 1f;
+        public static float LensDistance(float worldDistance, float armLength) => worldDistance * ArmMeters / Mathf.Max(armLength, 1e-4f);
+
         /// <summary>Full-frame-equivalent focal length (mm) for a vertical FOV, for the bokeh.</summary>
         public static float FocalLengthMm(float verticalFov) => 12f / Mathf.Tan(0.5f * verticalFov * Mathf.Deg2Rad);
     }
