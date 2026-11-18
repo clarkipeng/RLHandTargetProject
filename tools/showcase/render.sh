@@ -6,7 +6,8 @@
 # 2. regenerates the showcase assets and scenes from code,
 # 3. per look, replays the rollout offline: 4K 60 fps H.264 with accumulated motion blur, stills, a 5K hero still.
 # --preview renders at quarter resolution with few sub-frames, for checking framing quickly.
-# Publish to the lab wall afterwards with tools/showcase/gallery.sh <out_dir>.
+# The live view (tools/showcase/serve.sh) switches to this policy as soon as its take is exported.
+# Publish stills and clips to the lab wall afterwards with tools/showcase/gallery.sh <out_dir>.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -47,6 +48,10 @@ fi
 
 echo "== build showcase assets"
 tools/unity.sh --graphics -quit -executeMethod Showcase.Editor.ShowcaseBuilder.BuildFromCommandLine -logFile "$OUT/build.log"
+
+echo "== export for the live view and publish it on the wall"
+tools/unity.sh -executeMethod Showcase.Editor.WebExport.ExportFromCommandLine -take "$TAKE" -out "$OUT/$NAME.web.json" -logFile "$OUT/export.log"
+tools/showcase/serve.sh "$OUT/$NAME.web.json"
 
 for LOOK in $LOOKS; do
   DIR="$OUT/$LOOK"
