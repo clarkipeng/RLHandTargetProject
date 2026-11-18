@@ -72,7 +72,7 @@ namespace Showcase
             showcaseCamera.fieldOfView = pose.fov;
             if (dof != null)
             {
-                dof.focusDistance.Override(pose.focusDistance);
+                dof.focusDistance.Override(ShotEvaluator.LensDistance(pose.focusDistance, subject.ArmLength));
                 dof.focalLength.Override(ShotEvaluator.FocalLengthMm(pose.fov));
                 dof.aperture.Override(pose.aperture);
             }

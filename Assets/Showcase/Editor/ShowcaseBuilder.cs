@@ -22,21 +22,23 @@ namespace Showcase.Editor
         const string Root = "Assets/Showcase";
         const string TrainingScene = "Assets/Scenes/Playground.unity";
 
-        [MenuItem("Showcase/Rebuild assets and scene")]
+        [MenuItem("Showcase/Rebuild assets and scenes")]
         public static void Build()
         {
             var training = ReadTrainingScene();
-            foreach (var dir in new[] { "Materials", "Meshes", "Pipeline", "Reels" })
+            foreach (var dir in new[] { "Materials/Minimal", "Materials/Art", "Meshes", "Pipeline", "Reels", "Looks" })
                 Directory.CreateDirectory($"{Root}/{dir}");
+            // Assets of the single look before there were two.
+            foreach (var old in new[] { "Showcase.unity", "ShowcaseLook.asset", "Pipeline/ShowcaseVolume.asset" })
+                AssetDatabase.DeleteAsset($"{Root}/{old}");
             AssetDatabase.Refresh();
 
-            var look = BuildLook(training);
             var showcasePipeline = BuildPipeline("ShowcaseURP", offline: true);
             BuildPipeline("LiveURP", offline: false);
-            var profile = BuildVolumeProfile();
-            BuildScene(look, profile, training.floorY);
+            BuildMinimal(training);
+            BuildArt(training);
             AssetDatabase.SaveAssets();
-            Debug.Log($"[showcase] built; offline pipeline {AssetDatabase.GetAssetPath(showcasePipeline)}");
+            Debug.Log($"[showcase] built looks {string.Join(", ", ReplayRenderer.Looks)}; offline pipeline {AssetDatabase.GetAssetPath(showcasePipeline)}");
         }
 
         public static void BuildFromCommandLine()
@@ -74,34 +76,177 @@ namespace Showcase.Editor
             return refs;
         }
 
-        // ---------------------------------------------------------------- materials
+        // ---------------------------------------------------------------- looks
 
-        static ShowcaseLook BuildLook(TrainingRefs training)
+        static ShowcaseLook NewLook(string name, TrainingRefs training)
         {
-            var look = LoadOrCreate<ShowcaseLook>($"{Root}/ShowcaseLook.asset");
+            var look = LoadOrCreate<ShowcaseLook>(ReplayRenderer.LookPath(name));
             look.armPrefab = training.arm;
             look.ballPrefab = training.ball;
             look.targetPrefab = training.target;
-
-            // Glazed white ceramic shell: a soft diffuse body under a glossy clear coat.
-            look.armShell = Lit("ArmShell", Hex("E9E6E0"), smoothness: 0.45f, clearCoat: 0.8f, clearCoatSmoothness: 0.92f);
-            // Satin graphite hand: the business end reads darker, and the orange ball pops against it.
-            look.handShell = Lit("HandShell", Hex("3C4048"), smoothness: 0.62f, metallic: 0.45f, clearCoat: 0.3f, clearCoatSmoothness: 0.8f);
-            // Rubber ball in a saturated signal orange.
-            look.ball = Lit("Ball", Hex("FF5A14"), smoothness: 0.38f);
-            // Target: deep teal glass-like body with a soft inner glow that blooms a little.
-            // Target: a tinted glass bubble with a faint inner glow; the arm stays readable behind it.
-            look.target = Lit("Target", Hex("2FC6D2", 0.28f), smoothness: 0.95f, emission: Hex("19C4CF") * 0.35f, transparent: true);
-            look.targetHit = Lit("TargetHit", Hex("9FF4FA", 0.4f), smoothness: 0.95f, emission: Hex("6FEAF2") * 2.2f, transparent: true);
-            EditorUtility.SetDirty(look);
+            look.smoothMeshes = true;
+            look.joint = null;
+            look.targetDressing = null;
             return look;
         }
+
+        /// <summary>
+        /// Minimal: the training shapes, refined. A warm grey cyclorama, one big soft key, a cool rim,
+        /// glazed ceramic arm, graphite hand, an orange ball and a glass target.
+        /// </summary>
+        static void BuildMinimal(TrainingRefs training)
+        {
+            const string M = "Minimal/";
+            var look = NewLook("Minimal", training);
+            // Glazed white ceramic shell: a soft diffuse body under a glossy clear coat.
+            look.armShell = Lit(M + "ArmShell", Hex("E9E6E0"), smoothness: 0.45f, clearCoat: 0.8f, clearCoatSmoothness: 0.92f);
+            // Satin graphite hand: the business end reads darker, and the orange ball pops against it.
+            look.handShell = Lit(M + "HandShell", Hex("3C4048"), smoothness: 0.62f, metallic: 0.45f, clearCoat: 0.3f, clearCoatSmoothness: 0.8f);
+            look.ball = Lit(M + "Ball", Hex("FF5A14"), smoothness: 0.38f);
+            // A tinted glass bubble with a faint inner glow; the arm stays readable behind it.
+            look.target = Lit(M + "Target", Hex("2FC6D2", 0.22f), smoothness: 0.95f, emission: Hex("19C4CF") * 0.3f, transparent: true);
+            look.targetHit = Lit(M + "TargetHit", Hex("9FF4FA", 0.4f), smoothness: 0.95f, emission: Hex("4FD8E4") * 1.3f, transparent: true);
+            EditorUtility.SetDirty(look);
+
+            var profile = BuildVolumeProfile("Minimal", exposure: -0.1f, contrast: 8f, saturation: 4f, bloomThreshold: 1.1f, bloomIntensity: 0.3f,
+                vignette: 0.2f, shadowsTint: new Vector4(0.96f, 0.99f, 1.04f, 0f), highlightsTint: new Vector4(1.03f, 1f, 0.97f, 0f));
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            var stage = NewStage(training.floorY);
+            var studio = Lit(M + "Studio", Hex("75716C"), smoothness: 0.12f);
+            stage.cove = MeshObject("Cove", stage.transform, SaveMesh(CoveMesh(), "Cove"), studio, castShadows: false).transform;
+            stage.pedestal = MeshObject("Pedestal", stage.transform, SaveMesh(PedestalMesh(), "Pedestal"),
+                Lit(M + "Pedestal", Hex("3A3C40"), smoothness: 0.42f, metallic: 0.2f), castShadows: true).transform;
+            stage.pedestalRadius = 0.11f;
+
+            // Key: high, warm, from the front-left of the throw; a big soft source (8 degrees across).
+            var key = DirectionalLight("Key", stage.transform, Hex("FFF1DE"), 3.2f, new Vector3(42f, -35f, 0f), shadows: true, softDegrees: 4f);
+            key.shadowStrength = 0.8f;
+            // Rim: cool, from behind and above, picks the silhouette out of the backdrop.
+            DirectionalLight("Rim", stage.transform, Hex("CFE0FF"), 1.4f, new Vector3(22f, 150f, 0f), shadows: true, softDegrees: 3f).shadowStrength = 0.5f;
+            // Fill: low and dim from the camera side, keeps the shadow side from going dead.
+            DirectionalLight("Fill", stage.transform, Hex("E8EEF5"), 0.18f, new Vector3(8f, -120f, 0f), shadows: false);
+            Probe(stage, 0.6f);
+            Post(profile);
+            MakeCamera(Hex("3A3835"));
+            Ambient(Hex("5A606A"), Hex("4A4743"), Hex("2C2A28"));
+            RenderSettings.fog = false;
+            RenderSettings.sun = key;
+            EditorSceneManager.SaveScene(scene, ReplayRenderer.ScenePath("Minimal"));
+        }
+
+        /// <summary>
+        /// Art: a dark hall of light fins in haze around a spotlit plinth. Ceramic and graphite arm with
+        /// machined joints, a red and white bullseye that always faces the camera, a cyan ball.
+        /// </summary>
+        static void BuildArt(TrainingRefs training)
+        {
+            const string A = "Art/";
+            var look = NewLook("Art", training);
+            look.armShell = Lit(A + "ArmShell", Hex("ECE8E1"), smoothness: 0.5f, clearCoat: 0.9f, clearCoatSmoothness: 0.95f);
+            look.handShell = Lit(A + "HandShell", Hex("8A9099"), smoothness: 0.62f, metallic: 0.85f); // brushed titanium: catches the strips
+            look.joint = Lit(A + "Joint", Hex("26282C"), smoothness: 0.72f, metallic: 0.8f);
+            look.ball = Lit(A + "Ball", Hex("1FC3DC"), smoothness: 0.55f, emission: Hex("1FC3DC") * 0.18f);
+            look.target = Lit(A + "Target", Hex("E0402F", 0.2f), smoothness: 0.9f, transparent: true);
+            look.targetHit = Lit(A + "TargetHit", Hex("FFE2A8", 0.55f), smoothness: 0.9f, emission: Hex("FFC468") * 1.7f, transparent: true);
+            look.targetDressing = BullseyePrefab(A, look.targetHit);
+            EditorUtility.SetDirty(look);
+
+            var fogColor = Hex("171B22");
+            var profile = BuildVolumeProfile("Art", exposure: 0.4f, contrast: 18f, saturation: 6f, bloomThreshold: 0.95f, bloomIntensity: 0.65f,
+                vignette: 0.32f, shadowsTint: new Vector4(0.93f, 0.98f, 1.08f, 0f), highlightsTint: new Vector4(1.05f, 1f, 0.94f, 0f));
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            var stage = NewStage(training.floorY);
+            stage.fogDensityTimesArm = 0.095f;
+
+            // Everything below is authored with the arm length as the unit, origin on the floor under the shoulder.
+            var env = new GameObject("Environment").transform;
+            env.SetParent(stage.transform, false);
+            stage.environment = env;
+
+            var floor = MeshObject("Floor", env, SaveMesh(DiscMesh(), "Disc"),
+                Lit(A + "Floor", Hex("16171A"), smoothness: 0.8f), castShadows: false);
+            floor.transform.localScale = Vector3.one * 60f;
+
+            // A ring of tall fins, each with a light strip on its inner face: they frame every angle,
+            // fall away into the haze, and give the background its bokeh.
+            var cube = Resources.GetBuiltinResource<Mesh>("Cube.fbx");
+            var finMat = Lit(A + "Fin", Hex("2C2E33"), smoothness: 0.45f, metallic: 0.3f);
+            var stripMat = Lit(A + "Strip", Hex("0A0A0A"), smoothness: 0.3f, emission: Hex("C9D8F5") * 1.1f);
+            var warmStripMat = Lit(A + "WarmStrip", Hex("0A0A0A"), smoothness: 0.3f, emission: Hex("FFC98A") * 1.5f);
+            const int fins = 44;
+            const float ring = 7.5f, height = 9f;
+            for (int i = 0; i < fins; i++)
+            {
+                float a = 360f * i / fins;
+                var rot = Quaternion.Euler(0, a, 0);
+                var fin = MeshObject($"Fin{i}", env, cube, finMat, castShadows: false).transform;
+                fin.localRotation = rot;
+                fin.localPosition = rot * new Vector3(0, 0, ring + 0.25f) + Vector3.up * height * 0.5f;
+                fin.localScale = new Vector3(0.22f, height, 0.5f);
+                if (i % 2 == 1) continue; // a strip on every other fin: rhythm, not bars
+                var strip = MeshObject($"Strip{i}", env, cube, i % 8 == 0 ? warmStripMat : stripMat, castShadows: false).transform;
+                strip.localRotation = rot;
+                float h = i % 8 == 0 ? 6f : 4.2f;
+                strip.localPosition = rot * new Vector3(0, 0, ring - 0.02f) + Vector3.up * (0.25f + h * 0.5f);
+                strip.localScale = new Vector3(0.035f, h, 0.02f);
+            }
+            // The stage mark: a thin warm ring on the floor around the plinth.
+            var markMat = Lit(A + "Mark", Hex("0A0A0A"), smoothness: 0.3f, emission: Hex("FFB766") * 1.6f);
+            var mark = MeshObject("Mark", env, SaveMesh(TorusMesh(1f, 0.006f), "MarkRing"), markMat, castShadows: false).transform;
+            mark.localScale = new Vector3(0.75f, 1f, 0.75f);
+
+            stage.pedestal = MeshObject("Plinth", stage.transform, SaveMesh(PlinthMesh(), "Plinth"),
+                Lit(A + "Plinth", Hex("2A2C30"), smoothness: 0.58f, metallic: 0.65f), castShadows: true).transform;
+            stage.pedestalRadius = 0.12f;
+
+            // Key: a warm spot from high front-left, a pool of light on the plinth and the arm; soft (0.35 arm lengths across).
+            SpotLight("Key", env, Hex("FFE6C4"), 46f, new Vector3(-1.6f, 4.2f, -2.2f), new Vector3(0.7f, 0.7f, 0f), 68f, size: 0.18f, range: 12f, shadows: true);
+            // Kicker: a cool spot low from behind, carving the arm's far edge out of the dark.
+            SpotLight("Kicker", env, Hex("9EC6FF"), 26f, new Vector3(2.2f, 1.4f, 3.2f), new Vector3(0.2f, 0.8f, 0f), 45f, size: 0.12f, range: 12f, shadows: true);
+            // Top: a faint cool sky so the shadow side keeps its shape.
+            var top = DirectionalLight("Top", stage.transform, Hex("C8D6F0"), 0.35f, new Vector3(80f, 20f, 0f), shadows: true, softDegrees: 8f);
+            top.shadowStrength = 0.6f;
+            Probe(stage, 1f);
+            Post(profile);
+            MakeCamera(fogColor);
+            Ambient(Hex("262B34"), Hex("1C1F24"), Hex("111113"));
+            RenderSettings.fogColor = fogColor;
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.ExponentialSquared;
+            RenderSettings.sun = top;
+            EditorSceneManager.SaveScene(scene, ReplayRenderer.ScenePath("Art"));
+        }
+
+        /// <summary>
+        /// The art target: a unit-radius bullseye facing +Y (turned to the camera by the replay), a machined rim,
+        /// and a 'Shell' ring that the replay expands and fades on a hit.
+        /// </summary>
+        static GameObject BullseyePrefab(string prefix, Material hit)
+        {
+            var red = Lit(prefix + "TargetRed", Hex("D93A2B"), smoothness: 0.55f, emission: Hex("D93A2B") * 0.45f, clearCoat: 0.6f, clearCoatSmoothness: 0.9f);
+            var white = Lit(prefix + "TargetWhite", Hex("EEE9DF"), smoothness: 0.55f, emission: Hex("EEE9DF") * 0.12f, clearCoat: 0.6f, clearCoatSmoothness: 0.9f);
+            var rimMat = Lit(prefix + "TargetRim", Hex("2A2C30"), smoothness: 0.7f, metallic: 0.8f);
+
+            var root = new GameObject("Bullseye");
+            var face = MeshObject("Face", root.transform, SaveMesh(BullseyeMesh(5), "Bullseye"), red, castShadows: true);
+            face.GetComponent<MeshRenderer>().sharedMaterials = new[] { red, white };
+            MeshObject("Rim", root.transform, SaveMesh(TorusMesh(1f, 0.045f), "TargetRim"), rimMat, castShadows: true);
+            var shell = MeshObject("Shell", root.transform, SaveMesh(TorusMesh(1f, 0.06f), "TargetShell"), hit, castShadows: false);
+            shell.GetComponent<MeshRenderer>().enabled = false;
+            string path = "Assets/Showcase/Looks/ArtTarget.prefab";
+            var prefab = PrefabUtility.SaveAsPrefabAsset(root, path);
+            UnityEngine.Object.DestroyImmediate(root);
+            return prefab;
+        }
+
+        // ---------------------------------------------------------------- materials
 
         static Material Lit(string name, Color color, float smoothness, float metallic = 0f,
             float clearCoat = 0f, float clearCoatSmoothness = 0f, Color? emission = null, bool transparent = false)
         {
             var shader = Shader.Find(clearCoat > 0f ? "Universal Render Pipeline/Complex Lit" : "Universal Render Pipeline/Lit");
             var path = $"{Root}/Materials/{name}.mat";
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (mat == null) { mat = new Material(shader); AssetDatabase.CreateAsset(mat, path); }
             mat.shader = shader;
@@ -176,6 +321,10 @@ namespace Showcase.Editor
             var renderer = ScriptableObject.CreateInstance<UniversalRendererData>();
             AssetDatabase.CreateAsset(renderer, rendererPath);
             ResourceReloader.ReloadAllNullIn(renderer, UniversalRenderPipelineAsset.packagePath);
+            // Without post-process data URP silently skips every volume effect: tone mapping, bloom, DoF.
+            renderer.postProcessData = AssetDatabase.LoadAssetAtPath<PostProcessData>(
+                $"{UniversalRenderPipelineAsset.packagePath}/Runtime/Data/PostProcessData.asset")
+                ?? throw new Exception("URP's PostProcessData.asset was not found");
             AddSsao(renderer, offline);
 
             var asset = UniversalRenderPipelineAsset.Create(renderer);
@@ -246,38 +395,37 @@ namespace Showcase.Editor
 
         // ---------------------------------------------------------------- post-processing
 
-        static VolumeProfile BuildVolumeProfile()
+        static VolumeProfile BuildVolumeProfile(string name, float exposure, float contrast, float saturation,
+            float bloomThreshold, float bloomIntensity, float vignette, Vector4 shadowsTint, Vector4 highlightsTint)
         {
-            string path = $"{Root}/Pipeline/ShowcaseVolume.asset";
+            string path = $"{Root}/Pipeline/{name}Volume.asset";
             AssetDatabase.DeleteAsset(path);
             var profile = ScriptableObject.CreateInstance<VolumeProfile>();
             AssetDatabase.CreateAsset(profile, path);
 
-            var tone = Add<Tonemapping>(profile);
-            tone.mode.Override(TonemappingMode.ACES);
+            Add<Tonemapping>(profile).mode.Override(TonemappingMode.ACES);
 
             var bloom = Add<Bloom>(profile);
-            bloom.threshold.Override(1.1f);
-            bloom.intensity.Override(0.35f);
+            bloom.threshold.Override(bloomThreshold);
+            bloom.intensity.Override(bloomIntensity);
             bloom.scatter.Override(0.72f);
             bloom.highQualityFiltering.Override(true);
 
             var grade = Add<ColorAdjustments>(profile);
-            grade.postExposure.Override(-0.1f);
-            grade.contrast.Override(8f);
-            grade.saturation.Override(4f);
+            grade.postExposure.Override(exposure);
+            grade.contrast.Override(contrast);
+            grade.saturation.Override(saturation);
 
-            var wb = Add<WhiteBalance>(profile);
-            wb.temperature.Override(4f);
+            Add<WhiteBalance>(profile).temperature.Override(4f);
 
-            // Gentle shadow/highlight split: cool shadows, warm highlights.
+            // Shadow/highlight split: cool shadows, warm highlights.
             var smh = Add<ShadowsMidtonesHighlights>(profile);
-            smh.shadows.Override(new Vector4(0.96f, 0.99f, 1.04f, 0f));
-            smh.highlights.Override(new Vector4(1.03f, 1.0f, 0.97f, 0f));
+            smh.shadows.Override(shadowsTint);
+            smh.highlights.Override(highlightsTint);
 
-            var vignette = Add<Vignette>(profile);
-            vignette.intensity.Override(0.22f);
-            vignette.smoothness.Override(0.5f);
+            var vig = Add<Vignette>(profile);
+            vig.intensity.Override(vignette);
+            vig.smoothness.Override(0.5f);
 
             var dof = Add<DepthOfField>(profile);
             dof.mode.Override(DepthOfFieldMode.Bokeh);
@@ -306,36 +454,19 @@ namespace Showcase.Editor
             return c;
         }
 
-        // ---------------------------------------------------------------- scene
+        // ---------------------------------------------------------------- scene parts
 
-        static void BuildScene(ShowcaseLook look, VolumeProfile profile, float floorY)
+        static Stage NewStage(float floorY)
         {
-            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-
-            var stageGo = new GameObject("Stage");
-            var stage = stageGo.AddComponent<Stage>();
+            var stage = new GameObject("Stage").AddComponent<Stage>();
             stage.floorY = floorY;
+            return stage;
+        }
 
-            var studio = Lit("Studio", Hex("75716C"), smoothness: 0.12f);
-            var pedestalMat = Lit("Pedestal", Hex("3A3C40"), smoothness: 0.42f, metallic: 0.2f);
-
-            stage.cove = MeshObject("Cove", stageGo.transform, SaveMesh(CoveMesh(), "Cove"), studio, castShadows: false).transform;
-            stage.pedestal = MeshObject("Pedestal", stageGo.transform, SaveMesh(PedestalMesh(), "Pedestal"), pedestalMat, castShadows: true).transform;
-            stage.cove.position = new Vector3(0, floorY, 0);
-            stage.cove.localScale = Vector3.one * 200f;
-
-            // Key: high, warm, from the front-left of the throw; soft shadows.
-            var key = DirectionalLight("Key", stageGo.transform, Hex("FFF1DE"), 3.2f, new Vector3(42f, -35f, 0f), shadows: true);
-            key.shadowStrength = 0.82f;
-            key.shadowBias = 0.05f;
-            key.shadowNormalBias = 0.3f;
-            // Rim: cool, from behind and above, picks the silhouette out of the backdrop.
-            DirectionalLight("Rim", stageGo.transform, Hex("CFE0FF"), 1.4f, new Vector3(22f, 150f, 0f), shadows: false);
-            // Fill: low and dim from the camera side, keeps the shadow side from going dead.
-            DirectionalLight("Fill", stageGo.transform, Hex("E8EEF5"), 0.15f, new Vector3(8f, -120f, 0f), shadows: false);
-
+        static void Probe(Stage stage, float intensity)
+        {
             var probeGo = new GameObject("Reflections");
-            probeGo.transform.SetParent(stageGo.transform, false);
+            probeGo.transform.SetParent(stage.transform, false);
             stage.probe = probeGo.AddComponent<ReflectionProbe>();
             stage.probe.mode = ReflectionProbeMode.Realtime;
             stage.probe.refreshMode = ReflectionProbeRefreshMode.ViaScripting;
@@ -343,18 +474,23 @@ namespace Showcase.Editor
             stage.probe.resolution = 512;
             stage.probe.hdr = true;
             stage.probe.importance = 1;
-            stage.probe.intensity = 0.6f; // reflections tint the clear coat without flattening it
+            stage.probe.intensity = intensity;
             stage.probe.size = Vector3.one * 400f;
+        }
 
-            var volumeGo = new GameObject("Post");
-            var volume = volumeGo.AddComponent<Volume>();
+        static void Post(VolumeProfile profile)
+        {
+            var volume = new GameObject("Post").AddComponent<Volume>();
             volume.isGlobal = true;
             volume.sharedProfile = profile;
+        }
 
+        static void MakeCamera(Color background)
+        {
             var camGo = new GameObject("ShowcaseCamera");
             var cam = camGo.AddComponent<Camera>();
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = Hex("3A3835");
+            cam.backgroundColor = background;
             cam.nearClipPlane = 0.05f;
             cam.farClipPlane = 5000f;
             cam.fieldOfView = 30f;
@@ -364,21 +500,19 @@ namespace Showcase.Editor
             data.renderShadows = true;
             data.requiresDepthOption = CameraOverrideOption.On;
             camGo.transform.SetPositionAndRotation(new Vector3(0, 0, -40), Quaternion.identity);
-
-            // Soft studio ambient: a cool sky over a warm bounce from the floor.
-            RenderSettings.skybox = null;
-            RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = Hex("5A606A");
-            RenderSettings.ambientEquatorColor = Hex("4A4743");
-            RenderSettings.ambientGroundColor = Hex("2C2A28");
-            RenderSettings.defaultReflectionMode = DefaultReflectionMode.Custom;
-            RenderSettings.fog = false;
-            RenderSettings.sun = key;
-
-            EditorSceneManager.SaveScene(scene, ReplayRenderer.ScenePath);
         }
 
-        static Light DirectionalLight(string name, Transform parent, Color color, float intensity, Vector3 euler, bool shadows)
+        static void Ambient(Color sky, Color equator, Color ground)
+        {
+            RenderSettings.skybox = null;
+            RenderSettings.ambientMode = AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = sky;
+            RenderSettings.ambientEquatorColor = equator;
+            RenderSettings.ambientGroundColor = ground;
+            RenderSettings.defaultReflectionMode = DefaultReflectionMode.Custom;
+        }
+
+        static Light DirectionalLight(string name, Transform parent, Color color, float intensity, Vector3 euler, bool shadows, float softDegrees = 0f)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
@@ -388,7 +522,34 @@ namespace Showcase.Editor
             light.color = color;
             light.intensity = intensity;
             light.shadows = shadows ? LightShadows.Soft : LightShadows.None;
+            light.shadowBias = 0.05f;
+            light.shadowNormalBias = 0.3f;
             go.AddComponent<UniversalAdditionalLightData>();
+            if (softDegrees > 0f) go.AddComponent<StageLight>().angularRadius = softDegrees;
+            return light;
+        }
+
+        /// <summary>A spot in arm-length units: intensity is the illuminance at one arm length, so it holds at any scale.</summary>
+        static Light SpotLight(string name, Transform env, Color color, float intensity, Vector3 position, Vector3 aim,
+            float angle, float size, float range, bool shadows)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(env, false);
+            go.transform.localPosition = position;
+            go.transform.localRotation = Quaternion.LookRotation(aim - position);
+            var light = go.AddComponent<Light>();
+            light.type = LightType.Spot;
+            light.color = color;
+            light.spotAngle = angle;
+            light.innerSpotAngle = angle * 0.55f;
+            light.shadows = shadows ? LightShadows.Soft : LightShadows.None;
+            light.shadowBias = 0.05f;
+            light.shadowNormalBias = 0.4f;
+            go.AddComponent<UniversalAdditionalLightData>();
+            var sl = go.AddComponent<StageLight>();
+            sl.size = size;
+            sl.range = range;
+            sl.intensity = intensity;
             return light;
         }
 
@@ -414,6 +575,98 @@ namespace Showcase.Editor
         }
 
         // ---------------------------------------------------------------- procedural studio meshes
+
+        /// <summary>Flat unit disc facing +Y.</summary>
+        static Mesh DiscMesh() => Lathe(new List<(Vector2, Vector2)>
+        {
+            (new Vector2(0f, 0f), Vector2.up), (new Vector2(0.25f, 0f), Vector2.up),
+            (new Vector2(0.5f, 0f), Vector2.up), (new Vector2(1f, 0f), Vector2.up),
+        }, 128);
+
+        /// <summary>Torus around +Y with ring radius R and tube radius r.</summary>
+        static Mesh TorusMesh(float R, float r)
+        {
+            var profile = new List<(Vector2, Vector2)>();
+            for (int i = 0; i <= 32; i++)
+            {
+                float a = 2f * Mathf.PI * i / 32f;
+                var n = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
+                profile.Add((new Vector2(R, 0f) + n * r, n));
+            }
+            return Lathe(profile, 160);
+        }
+
+        /// <summary>
+        /// The art plinth, in the pedestal's unit space (radius 0.5, height 1): a wide machined foot,
+        /// the column, and a collar under the shoulder.
+        /// </summary>
+        static Mesh PlinthMesh()
+        {
+            var p = new List<(Vector2 p, Vector2 n)>();
+            void Edge(float r, float y, Vector2 n) => p.Add((new Vector2(r, y), n));
+            void Round(Vector2 center, float radius, float a0, float a1, int steps)
+            {
+                for (int i = 0; i <= steps; i++)
+                {
+                    float a = Mathf.Lerp(a0, a1, i / (float)steps) * Mathf.Deg2Rad;
+                    var n = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
+                    p.Add((center + n * radius, n));
+                }
+            }
+            Edge(1.6f, 0f, Vector2.right);
+            Round(new Vector2(1.6f - 0.006f, 0.012f - 0.006f), 0.006f, 0f, 90f, 6);     // foot top edge
+            Edge(0.5f + 0.012f, 0.012f, Vector2.up);
+            Round(new Vector2(0.5f + 0.012f, 0.024f), 0.012f, 270f, 180f, 6);           // fillet into the column
+            Edge(0.5f, 0.97f, Vector2.right);
+            Edge(0.62f, 0.97f, Vector2.down);
+            Round(new Vector2(0.62f - 0.004f, 0.996f), 0.004f, 0f, 90f, 6);             // collar edge
+            Edge(0f, 1f, Vector2.up);
+            return Lathe(p, 128);
+        }
+
+        /// <summary>Unit-radius bullseye facing +Y: equal-width rings alternating between submesh 0 (red, center) and 1 (white).</summary>
+        static Mesh BullseyeMesh(int rings)
+        {
+            const int segments = 160;
+            var verts = new List<Vector3>();
+            var tris = new[] { new List<int>(), new List<int>() };
+            for (int ring = 0; ring < rings; ring++)
+            {
+                float r0 = ring / (float)rings, r1 = (ring + 1) / (float)rings;
+                int start = verts.Count;
+                for (int s = 0; s <= segments; s++)
+                {
+                    float a = 2f * Mathf.PI * s / segments;
+                    var d = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+                    verts.Add(d * r0);
+                    verts.Add(d * r1);
+                }
+                var t = tris[ring % 2];
+                for (int s = 0; s < segments; s++)
+                {
+                    int i0 = start + 2 * s, i1 = i0 + 1, i2 = i0 + 2, i3 = i0 + 3;
+                    t.AddRange(new[] { i0, i1, i2, i2, i1, i3 });
+                }
+            }
+            var mesh = new Mesh { indexFormat = IndexFormat.UInt32, subMeshCount = 2 };
+            mesh.SetVertices(verts);
+            mesh.SetNormals(verts.Select(_ => Vector3.up).ToList());
+            mesh.SetUVs(0, verts.Select(v => new Vector2(v.x * 0.5f + 0.5f, v.z * 0.5f + 0.5f)).ToList());
+            mesh.SetTriangles(tris[0], 0);
+            mesh.SetTriangles(tris[1], 1);
+            // Face +Y: flip any triangle whose geometric normal points down.
+            for (int sm = 0; sm < 2; sm++)
+            {
+                var idx = mesh.GetTriangles(sm);
+                for (int i = 0; i < idx.Length; i += 3)
+                    if (Vector3.Cross(verts[idx[i + 1]] - verts[idx[i]], verts[idx[i + 2]] - verts[idx[i]]).y < 0f)
+                        (idx[i + 1], idx[i + 2]) = (idx[i + 2], idx[i + 1]);
+                mesh.SetTriangles(idx, sm);
+            }
+            mesh.RecalculateBounds();
+            mesh.RecalculateTangents();
+            return mesh;
+        }
 
         /// <summary>
         /// Round cyclorama of unit radius: a flat floor that curves smoothly up into a wall all around,

@@ -18,23 +18,30 @@ namespace Showcase.Editor
     /// tone mapping come from the URP volume of the showcase scene.
     ///
     /// Unity -batchmode -projectPath . -executeMethod Showcase.Editor.ReplayRenderer.RenderFromCommandLine
-    ///   -take run.take -reel Assets/Showcase/Reels/website.json -out website.mp4
+    ///   -take run.take -look minimal|art -reel Assets/Showcase/Reels/website.json -out website.mp4
     ///   [-stills dir] [-scale 0.25] [-subframes 4] [-maxFrames 120]
     /// </summary>
     public static class ReplayRenderer
     {
-        public const string ScenePath = "Assets/Showcase/Showcase.unity";
-        public const string LookPath = "Assets/Showcase/ShowcaseLook.asset";
+        /// <summary>The looks ShowcaseBuilder generates; each is a scene plus a ShowcaseLook asset.</summary>
+        public static readonly string[] Looks = { "Minimal", "Art" };
+        public static string ScenePath(string look) => $"Assets/Showcase/Looks/{look}.unity";
+        public static string LookPath(string look) => $"Assets/Showcase/Looks/{look}Look.asset";
+
+        /// <summary>-look minimal|art, as the canonical look name.</summary>
+        static string LookArg() =>
+            Looks.FirstOrDefault(l => string.Equals(l, Arg("-look", "Minimal"), StringComparison.OrdinalIgnoreCase))
+            ?? throw new ArgumentException($"unknown -look {Arg("-look", "")}; expected one of {string.Join(", ", Looks)}");
 
         public const string PipelinePath = "Assets/Showcase/Pipeline/ShowcaseURP.asset";
 
         /// <summary>Opens the studio, switches to the offline pipeline and fits the stage to the take.</summary>
-        static (ShowcaseLook, Camera, DepthOfField, TakeSubject) Setup(Take take)
+        static (ShowcaseLook, Camera, DepthOfField, TakeSubject, Stage) Setup(Take take, string lookName)
         {
-            EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+            EditorSceneManager.OpenScene(ScenePath(lookName), OpenSceneMode.Single);
             // In-memory only for this batch run; the project's quality settings are never saved by it.
             QualitySettings.renderPipeline = AssetDatabase.LoadAssetAtPath<RenderPipelineAsset>(PipelinePath);
-            var look = AssetDatabase.LoadAssetAtPath<ShowcaseLook>(LookPath);
+            var look = AssetDatabase.LoadAssetAtPath<ShowcaseLook>(LookPath(lookName));
             var cam = GameObject.Find("ShowcaseCamera").GetComponent<Camera>();
             var volume = UnityEngine.Object.FindObjectsOfType<Volume>().First(v => v.isGlobal);
             volume.profile = UnityEngine.Object.Instantiate(volume.sharedProfile); // never dirty the asset
@@ -46,9 +53,10 @@ namespace Showcase.Editor
             foreach (var a in take.actors)
                 for (int f = 0; f < a.frames.Count; f += 8)
                     bounds.Encapsulate(a.frames[f][0].position);
-            UnityEngine.Object.FindObjectOfType<Stage>().Fit(subject.ArmBase(0), bounds, subject.ArmLength);
-            Debug.Log($"[showcase] take: {take.Duration:F1}s, {take.hitSteps.Count} hits, {take.episodeStarts.Count} episodes, arm length {subject.ArmLength:F2}, action bounds {bounds}");
-            return (look, cam, dof, subject);
+            var stage = UnityEngine.Object.FindObjectOfType<Stage>();
+            stage.Fit(subject.ArmBase(0), bounds, subject.ArmLength);
+            Debug.Log($"[showcase] look {lookName}; take: {take.Duration:F1}s, {take.hitSteps.Count} hits, {take.episodeStarts.Count} episodes, arm length {subject.ArmLength:F2}, action bounds {bounds}");
+            return (look, cam, dof, subject, stage);
         }
 
         public static void RenderFromCommandLine()
@@ -63,7 +71,7 @@ namespace Showcase.Editor
                 }
                 if (int.TryParse(Arg("-subframes", ""), out int sub)) reel.subframes = sub;
                 int.TryParse(Arg("-maxFrames", "0"), out int maxFrames);
-                Render(Take.Load(Arg("-take", null)), reel, Arg("-out", null), Arg("-stills", null), maxFrames);
+                Render(Take.Load(Arg("-take", null)), LookArg(), reel, Arg("-out", null), Arg("-stills", null), maxFrames);
                 EditorApplication.Exit(0);
             }
             catch (Exception e)
@@ -73,9 +81,9 @@ namespace Showcase.Editor
             }
         }
 
-        public static void Render(Take take, Reel reel, string videoPath, string stillsDir, int maxFrames = 0)
+        public static void Render(Take take, string lookName, Reel reel, string videoPath, string stillsDir, int maxFrames = 0)
         {
-            var (look, cam, dof, subject) = Setup(take);
+            var (look, cam, dof, subject, stage) = Setup(take, lookName);
             using var puppets = new ReplayPuppets(take, look, null);
             using var frame = new FrameAccumulator(reel.width, reel.height, cam);
 
@@ -100,8 +108,10 @@ namespace Showcase.Editor
                     {
                         // Sub-frame times spread evenly over the open shutter, centered on the frame time.
                         float ts = t + ((s + 0.5f) / reel.subframes - 0.5f) * reel.shutter / reel.fps;
-                        puppets.Pose(ts);
-                        Apply(cam, dof, ShotEvaluator.Evaluate(shot, subject, ts, u, start, end));
+                        var pose = ShotEvaluator.Evaluate(shot, subject, ts, u, start, end);
+                        Apply(cam, dof, pose, subject.ArmLength);
+                        puppets.Pose(ts, pose.position);
+                        stage.Jitter(s, reel.subframes);
                         frame.AddSubframe(s);
                     }
                     var pixels = frame.Resolve();
@@ -127,17 +137,22 @@ namespace Showcase.Editor
         /// Renders one hero still: a single instant (no motion blur) with many sub-frames of
         /// antialiasing, at any resolution.
         /// </summary>
-        public static void RenderStill(Take take, Shot shot, float u, int width, int height, int subframes, string pngPath)
+        public static void RenderStill(Take take, string lookName, Shot shot, float u, int width, int height, int subframes, string pngPath)
         {
-            var (look, cam, dof, subject) = Setup(take);
+            var (look, cam, dof, subject, stage) = Setup(take, lookName);
             using var puppets = new ReplayPuppets(take, look, null);
             using var frame = new FrameAccumulator(width, height, cam);
             float start = subject.AnchorTime(shot), end = start + shot.duration;
             float t = Mathf.Lerp(start, end, u);
-            puppets.Pose(t);
-            Apply(cam, dof, ShotEvaluator.Evaluate(shot, subject, t, u, start, end));
+            var pose = ShotEvaluator.Evaluate(shot, subject, t, u, start, end);
+            Apply(cam, dof, pose, subject.ArmLength);
+            puppets.Pose(t, pose.position);
+            if (float.TryParse(Arg("-debugAperture", ""), out float ap)) dof.aperture.Override(ap);
             frame.Begin();
-            for (int s = 0; s < subframes; s++) frame.AddSubframe(s);
+            for (int s = 0; s < subframes; s++) { stage.Jitter(s, subframes); frame.AddSubframe(s); }
+            var live = VolumeManager.instance.stack.GetComponent<DepthOfField>();
+            Debug.Log($"[showcase] still: lens focus {dof?.focusDistance.value:F2} m, {dof?.focalLength.value:F0} mm, f/{dof?.aperture.value:F1}; " +
+                      $"stack after render: mode {live.mode.value}, focus {live.focusDistance.value:F2}, f/{live.aperture.value:F1}");
             frame.Resolve();
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(pngPath)));
             File.WriteAllBytes(pngPath, frame.EncodePng());
@@ -149,8 +164,10 @@ namespace Showcase.Editor
             try
             {
                 var reel = JsonUtility.FromJson<Reel>(File.ReadAllText(Arg("-reel", "Assets/Showcase/Reels/website.json")));
-                var shot = reel.shots.First(s => s.name == Arg("-shot", reel.shots[0].name));
-                RenderStill(Take.Load(Arg("-take", null)), shot, float.Parse(Arg("-u", "0.5")),
+                string name = Arg("-shot", reel.shots[0].name);
+                var shot = reel.shots.FirstOrDefault(s => s.name == name)
+                           ?? throw new ArgumentException($"no shot '{name}' in the reel; it has {string.Join(", ", reel.shots.Select(s => s.name))}");
+                RenderStill(Take.Load(Arg("-take", null)), LookArg(), shot, float.Parse(Arg("-u", "0.5")),
                     int.Parse(Arg("-width", "5120")), int.Parse(Arg("-height", "2880")),
                     int.Parse(Arg("-subframes", "64")), Arg("-out", null));
                 EditorApplication.Exit(0);
@@ -162,13 +179,13 @@ namespace Showcase.Editor
             }
         }
 
-        static void Apply(Camera cam, DepthOfField dof, CameraPose pose)
+        static void Apply(Camera cam, DepthOfField dof, CameraPose pose, float armLength)
         {
             cam.transform.SetPositionAndRotation(pose.position, pose.rotation);
             cam.fieldOfView = pose.fov;
             if (dof == null) return;
             dof.mode.Override(DepthOfFieldMode.Bokeh);
-            dof.focusDistance.Override(pose.focusDistance);
+            dof.focusDistance.Override(ShotEvaluator.LensDistance(pose.focusDistance, armLength));
             dof.focalLength.Override(ShotEvaluator.FocalLengthMm(pose.fov));
             dof.aperture.Override(pose.aperture);
         }
