@@ -1,0 +1,14 @@
+{
+  "width": 3840,
+  "height": 2160,
+  "fps": 60,
+  "subframes": 16,
+  "shutter": 0.5,
+  "shots": [
+    { "name": "establish", "type": "Wide",   "anchor": "hit", "index": 0, "offset": -3.5, "duration": 6.0, "fov": 28, "aperture": 8.0, "distance": 1.0, "height": 9,  "azimuth": -12, "sweep": 10 },
+    { "name": "grasp",     "type": "Close",  "anchor": "hit", "index": 1, "offset": -3.2, "duration": 4.5, "fov": 30, "aperture": 2.0, "distance": 1.0, "height": 16, "azimuth": 35,  "sweep": 18 },
+    { "name": "flight",    "type": "Follow", "anchor": "hit", "index": 1, "offset": -1.2, "duration": 2.5, "fov": 34, "aperture": 4.0, "distance": 1.0, "height": 6,  "azimuth": -20, "sweep": 0 },
+    { "name": "hero",      "type": "Orbit",  "anchor": "hit", "index": 2, "offset": -4.5, "duration": 8.0, "fov": 34, "aperture": 2.8, "distance": 1.0, "height": 12, "azimuth": 10,  "sweep": 55 },
+    { "name": "finale",    "type": "Wide",   "anchor": "hit", "index": 3, "offset": -4.0, "duration": 6.0, "fov": 26, "aperture": 8.0, "distance": 1.1, "height": 20, "azimuth": 28,  "sweep": -10 }
+  ]
+}

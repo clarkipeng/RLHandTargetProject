@@ -94,3 +94,8 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# Showcase renders (large; share via LFS-tracked stills only)
+renders/
+Assets/Showcase/Policies/
+Assets/Showcase/Policies.meta
