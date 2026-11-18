@@ -183,7 +183,6 @@ public static class ArtBodyUtils
         body.jointPosition = new ArticulationReducedSpace(newJointPositions.x, newJointPositions.y, newJointPositions.z);
         if (!resetEverything)
             return;
-        body.jointAcceleration = new ArticulationReducedSpace(0f, 0f, 0f);
         body.jointVelocity = new ArticulationReducedSpace(0f, 0f, 0f);
         body.jointForce = new ArticulationReducedSpace(0f, 0f, 0f);
         body.velocity = Vector3.zero;
@@ -196,7 +195,6 @@ public static class ArtBodyUtils
         body.jointPosition = new ArticulationReducedSpace(newJointPosition);
         if (!resetEverything)
             return;
-        body.jointAcceleration = new ArticulationReducedSpace(0);
         body.jointVelocity = new ArticulationReducedSpace(0);
         body.jointForce = new ArticulationReducedSpace(0);
         body.velocity = Vector3.zero;
