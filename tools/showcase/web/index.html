@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RL Arm Live</title>
+<style>
+  :root { --ink: #e9e6e0; --dim: #9aa0a8; --bg: #0c0e12; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  .hud { position: fixed; left: 2.2vw; bottom: 2.4vh; color: var(--ink); font: 500 clamp(11px, 1.05vw, 18px)/1.45 ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif;
+         letter-spacing: 0.02em; text-shadow: 0 1px 8px rgba(0,0,0,.45); pointer-events: none; }
+  .hud b { font-weight: 650; letter-spacing: 0.04em; }
+  .hud .dim { color: var(--dim); }
+  .tag { position: fixed; right: 2.2vw; bottom: 2.4vh; color: var(--dim); font: 500 clamp(10px, 0.9vw, 15px) ui-sans-serif, system-ui, sans-serif;
+         letter-spacing: 0.12em; text-transform: uppercase; pointer-events: none; }
+  .hit { color: #ffc468; transition: opacity .6s; }
+  .err { position: fixed; inset: 0; display: grid; place-items: center; color: var(--dim); font: 15px system-ui, sans-serif; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<div class="hud" id="hud"></div>
+<div class="tag" id="tag"></div>
+<script type="module" src="./viewer.js"></script>
+</body>
+</html>
