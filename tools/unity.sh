@@ -28,4 +28,4 @@ while true; do
 done
 trap 'rm -f "$LOCK"' EXIT
 
-nice -n 10 "$UNITY" -batchmode "${gfx[@]}" -disable-audio -projectPath "$ROOT" "${args[@]}"
+nice -n 10 "$UNITY" -batchmode ${gfx[@]+"${gfx[@]}"} -disable-audio -projectPath "$ROOT" ${args[@]+"${args[@]}"}
