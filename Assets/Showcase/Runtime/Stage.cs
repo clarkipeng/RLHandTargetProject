@@ -25,7 +25,7 @@ namespace Showcase
             cove.localScale = Vector3.one * radius;
 
             float pedestalRadius = 0.11f * armLength;
-            float top = shoulder.y - 0.12f * armLength;
+            float top = shoulder.y - 0.04f * armLength;
             pedestal.position = new Vector3(shoulder.x, floorY, shoulder.z);
             pedestal.localScale = new Vector3(2f * pedestalRadius, Mathf.Max(0.01f, top - floorY), 2f * pedestalRadius);
 

@@ -72,7 +72,9 @@ namespace Showcase
         void Discover()
         {
             foreach (var arm in FindObjectsOfType<SimCharController>()) Track(arm.transform, ActorKind.Arm);
-            foreach (var ball in FindObjectsOfType<ProjectileScript>()) Track(ball.transform, ActorKind.Ball);
+            foreach (var ball in FindObjectsOfType<ProjectileScript>())
+                if (ball.transform.parent == null || ball.transform.parent.GetComponentInParent<ProjectileScript>() == null)
+                    Track(ball.transform, ActorKind.Ball); // the prefab nests a second ProjectileScript; keep the outermost
             foreach (var target in GameObject.FindGameObjectsWithTag("target")) Track(target.transform, ActorKind.Target);
         }
 

@@ -86,18 +86,19 @@ namespace Showcase.Editor
             // Glazed white ceramic shell: a soft diffuse body under a glossy clear coat.
             look.armShell = Lit("ArmShell", Hex("E9E6E0"), smoothness: 0.45f, clearCoat: 0.8f, clearCoatSmoothness: 0.92f);
             // Satin graphite hand: the business end reads darker, and the orange ball pops against it.
-            look.handShell = Lit("HandShell", Hex("2A2C30"), smoothness: 0.58f, metallic: 0.35f, clearCoat: 0.3f, clearCoatSmoothness: 0.8f);
+            look.handShell = Lit("HandShell", Hex("3C4048"), smoothness: 0.62f, metallic: 0.45f, clearCoat: 0.3f, clearCoatSmoothness: 0.8f);
             // Rubber ball in a saturated signal orange.
             look.ball = Lit("Ball", Hex("FF5A14"), smoothness: 0.38f);
             // Target: deep teal glass-like body with a soft inner glow that blooms a little.
-            look.target = Lit("Target", Hex("0E6F78"), smoothness: 0.85f, emission: Hex("19C4CF") * 1.6f);
-            look.targetHit = Lit("TargetHit", Hex("D8FFFF"), smoothness: 0.85f, emission: Hex("B8FBFF") * 9f);
+            // Target: a tinted glass bubble with a faint inner glow; the arm stays readable behind it.
+            look.target = Lit("Target", Hex("2FC6D2", 0.28f), smoothness: 0.95f, emission: Hex("19C4CF") * 0.35f, transparent: true);
+            look.targetHit = Lit("TargetHit", Hex("9FF4FA", 0.4f), smoothness: 0.95f, emission: Hex("6FEAF2") * 2.2f, transparent: true);
             EditorUtility.SetDirty(look);
             return look;
         }
 
         static Material Lit(string name, Color color, float smoothness, float metallic = 0f,
-            float clearCoat = 0f, float clearCoatSmoothness = 0f, Color? emission = null)
+            float clearCoat = 0f, float clearCoatSmoothness = 0f, Color? emission = null, bool transparent = false)
         {
             var shader = Shader.Find(clearCoat > 0f ? "Universal Render Pipeline/Complex Lit" : "Universal Render Pipeline/Lit");
             var path = $"{Root}/Materials/{name}.mat";
@@ -127,12 +128,37 @@ namespace Showcase.Editor
                 mat.DisableKeyword("_EMISSION");
                 mat.SetColor("_EmissionColor", Color.black);
             }
+            SetTransparent(mat, transparent);
             mat.enableInstancing = true;
             EditorUtility.SetDirty(mat);
             return mat;
         }
 
-        static Color Hex(string hex) => ColorUtility.TryParseHtmlString("#" + hex, out var c) ? c : Color.magenta;
+        static Color Hex(string hex, float alpha = 1f)
+        {
+            var c = ColorUtility.TryParseHtmlString("#" + hex, out var parsed) ? parsed : Color.magenta;
+            c.a = alpha;
+            return c;
+        }
+
+        /// <summary>URP Lit surface type, set the way the material inspector sets it.</summary>
+        static void SetTransparent(Material mat, bool on)
+        {
+            mat.SetFloat("_Surface", on ? 1f : 0f);
+            mat.SetFloat("_Blend", 0f); // alpha
+            mat.SetFloat("_BlendModePreserveSpecular", 1f);
+            mat.SetFloat("_SrcBlend", on ? (float)BlendMode.One : (float)BlendMode.One); // premultiplied-style with preserved specular
+            mat.SetFloat("_DstBlend", on ? (float)BlendMode.OneMinusSrcAlpha : (float)BlendMode.Zero);
+            mat.SetFloat("_SrcBlendAlpha", 1f);
+            mat.SetFloat("_DstBlendAlpha", on ? (float)BlendMode.OneMinusSrcAlpha : 0f);
+            mat.SetFloat("_ZWrite", on ? 0f : 1f);
+            mat.SetOverrideTag("RenderType", on ? "Transparent" : "Opaque");
+            mat.renderQueue = on ? (int)RenderQueue.Transparent : -1;
+            if (on) { mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT"); mat.EnableKeyword("_ALPHAPREMULTIPLY_ON"); }
+            else { mat.DisableKeyword("_SURFACE_TYPE_TRANSPARENT"); mat.DisableKeyword("_ALPHAPREMULTIPLY_ON"); }
+            mat.SetShaderPassEnabled("DepthOnly", !on);
+            mat.SetShaderPassEnabled("ShadowCaster", !on);
+        }
 
         // ---------------------------------------------------------------- pipeline
 
@@ -170,8 +196,8 @@ namespace Showcase.Editor
             Set(so, "m_SoftShadowsSupported", true);
             Set(so, "m_ColorGradingMode", 1); // HDR grading
             Set(so, "m_ColorGradingLutSize", offline ? 65 : 32);
-            Set(so, "m_SupportsCameraDepthTexture", true);
-            Set(so, "m_SupportsCameraOpaqueTexture", false);
+            Set(so, "m_RequireDepthTexture", true);
+            Set(so, "m_RequireOpaqueTexture", false);
             Set(so, "m_VolumeFrameworkUpdateMode", 0); // every frame: the replay animates DoF per sub-frame
             so.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(asset);
@@ -237,7 +263,7 @@ namespace Showcase.Editor
             bloom.highQualityFiltering.Override(true);
 
             var grade = Add<ColorAdjustments>(profile);
-            grade.postExposure.Override(0.15f);
+            grade.postExposure.Override(-0.1f);
             grade.contrast.Override(8f);
             grade.saturation.Override(4f);
 
@@ -290,7 +316,7 @@ namespace Showcase.Editor
             var stage = stageGo.AddComponent<Stage>();
             stage.floorY = floorY;
 
-            var studio = Lit("Studio", Hex("A7A39D"), smoothness: 0.18f);
+            var studio = Lit("Studio", Hex("75716C"), smoothness: 0.12f);
             var pedestalMat = Lit("Pedestal", Hex("3A3C40"), smoothness: 0.42f, metallic: 0.2f);
 
             stage.cove = MeshObject("Cove", stageGo.transform, SaveMesh(CoveMesh(), "Cove"), studio, castShadows: false).transform;
@@ -299,15 +325,14 @@ namespace Showcase.Editor
             stage.cove.localScale = Vector3.one * 200f;
 
             // Key: high, warm, from the front-left of the throw; soft shadows.
-            var key = DirectionalLight("Key", stageGo.transform, Hex("FFF1DE"), 2.4f, new Vector3(48f, -35f, 0f), shadows: true);
+            var key = DirectionalLight("Key", stageGo.transform, Hex("FFF1DE"), 3.2f, new Vector3(42f, -35f, 0f), shadows: true);
             key.shadowStrength = 0.82f;
             key.shadowBias = 0.05f;
             key.shadowNormalBias = 0.3f;
-            key.shadowSoftness = 0.6f;
             // Rim: cool, from behind and above, picks the silhouette out of the backdrop.
-            DirectionalLight("Rim", stageGo.transform, Hex("CFE0FF"), 1.6f, new Vector3(28f, 150f, 0f), shadows: false);
+            DirectionalLight("Rim", stageGo.transform, Hex("CFE0FF"), 1.4f, new Vector3(22f, 150f, 0f), shadows: false);
             // Fill: low and dim from the camera side, keeps the shadow side from going dead.
-            DirectionalLight("Fill", stageGo.transform, Hex("E8EEF5"), 0.35f, new Vector3(8f, -120f, 0f), shadows: false);
+            DirectionalLight("Fill", stageGo.transform, Hex("E8EEF5"), 0.15f, new Vector3(8f, -120f, 0f), shadows: false);
 
             var probeGo = new GameObject("Reflections");
             probeGo.transform.SetParent(stageGo.transform, false);
@@ -318,6 +343,7 @@ namespace Showcase.Editor
             stage.probe.resolution = 512;
             stage.probe.hdr = true;
             stage.probe.importance = 1;
+            stage.probe.intensity = 0.6f; // reflections tint the clear coat without flattening it
             stage.probe.size = Vector3.one * 400f;
 
             var volumeGo = new GameObject("Post");
@@ -328,7 +354,7 @@ namespace Showcase.Editor
             var camGo = new GameObject("ShowcaseCamera");
             var cam = camGo.AddComponent<Camera>();
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = Hex("A7A39D");
+            cam.backgroundColor = Hex("3A3835");
             cam.nearClipPlane = 0.05f;
             cam.farClipPlane = 5000f;
             cam.fieldOfView = 30f;
@@ -342,9 +368,9 @@ namespace Showcase.Editor
             // Soft studio ambient: a cool sky over a warm bounce from the floor.
             RenderSettings.skybox = null;
             RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = Hex("8E97A3");
-            RenderSettings.ambientEquatorColor = Hex("77736D");
-            RenderSettings.ambientGroundColor = Hex("4A4642");
+            RenderSettings.ambientSkyColor = Hex("5A606A");
+            RenderSettings.ambientEquatorColor = Hex("4A4743");
+            RenderSettings.ambientGroundColor = Hex("2C2A28");
             RenderSettings.defaultReflectionMode = DefaultReflectionMode.Custom;
             RenderSettings.fog = false;
             RenderSettings.sun = key;

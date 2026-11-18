@@ -20,10 +20,10 @@ namespace Showcase
         public float shotSeconds = 9f;
         public List<Shot> shots = new List<Shot>
         {
-            new Shot { name = "wide",   type = ShotType.Wide,   fov = 28, aperture = 8,   height = 10, azimuth = -12, sweep = 14 },
-            new Shot { name = "orbit",  type = ShotType.Orbit,  fov = 34, aperture = 2.8f, height = 12, azimuth = 10,  sweep = 60 },
-            new Shot { name = "close",  type = ShotType.Close,  fov = 30, aperture = 2f,  height = 16, azimuth = 35,  sweep = 20 },
-            new Shot { name = "follow", type = ShotType.Follow, fov = 34, aperture = 4f,  height = 6,  azimuth = -20, sweep = 0 },
+            new Shot { name = "wide",   type = "Wide",   fov = 28, aperture = 8,   height = 10, azimuth = -12, sweep = 14 },
+            new Shot { name = "orbit",  type = "Orbit",  fov = 34, aperture = 2.8f, height = 12, azimuth = 10,  sweep = 60 },
+            new Shot { name = "close",  type = "Close",  fov = 30, aperture = 2f,  height = 16, azimuth = 35,  sweep = 20 },
+            new Shot { name = "follow", type = "Follow", fov = 34, aperture = 4f,  height = 6,  azimuth = -20, sweep = 0 },
         };
 
         readonly HashSet<int> styled = new HashSet<int>();
@@ -112,7 +112,7 @@ namespace Showcase
                 if (sim == null) return false;
                 arm = sim.transform;
                 var parts = arm.GetComponentsInChildren<MeshRenderer>().Select(r => r.transform).ToArray();
-                shoulder = parts.FirstOrDefault(p => p.name.ToLowerInvariant().Contains("upperarm")) ?? arm;
+                shoulder = arm; // the root part is the shoulder
                 palm = parts.FirstOrDefault(p => p.name.ToLowerInvariant().Contains("palm")) ?? parts.Last();
                 ArmLength = Mathf.Max(0.01f, parts.Max(p => Vector3.Distance(p.position, shoulder.position)));
             }

@@ -26,6 +26,31 @@ namespace Showcase.Editor
         public const string ScenePath = "Assets/Showcase/Showcase.unity";
         public const string LookPath = "Assets/Showcase/ShowcaseLook.asset";
 
+        public const string PipelinePath = "Assets/Showcase/Pipeline/ShowcaseURP.asset";
+
+        /// <summary>Opens the studio, switches to the offline pipeline and fits the stage to the take.</summary>
+        static (ShowcaseLook, Camera, DepthOfField, TakeSubject) Setup(Take take)
+        {
+            EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+            // In-memory only for this batch run; the project's quality settings are never saved by it.
+            QualitySettings.renderPipeline = AssetDatabase.LoadAssetAtPath<RenderPipelineAsset>(PipelinePath);
+            var look = AssetDatabase.LoadAssetAtPath<ShowcaseLook>(LookPath);
+            var cam = GameObject.Find("ShowcaseCamera").GetComponent<Camera>();
+            var volume = UnityEngine.Object.FindObjectsOfType<Volume>().First(v => v.isGlobal);
+            volume.profile = UnityEngine.Object.Instantiate(volume.sharedProfile); // never dirty the asset
+            volume.profile.TryGet(out DepthOfField dof);
+            ReplayPuppets.DropNestedBalls(take);
+            var subject = new TakeSubject(take);
+
+            var bounds = new Bounds(subject.ArmBase(0), Vector3.zero);
+            foreach (var a in take.actors)
+                for (int f = 0; f < a.frames.Count; f += 8)
+                    bounds.Encapsulate(a.frames[f][0].position);
+            UnityEngine.Object.FindObjectOfType<Stage>().Fit(subject.ArmBase(0), bounds, subject.ArmLength);
+            Debug.Log($"[showcase] take: {take.Duration:F1}s, {take.hitSteps.Count} hits, {take.episodeStarts.Count} episodes, arm length {subject.ArmLength:F2}, action bounds {bounds}");
+            return (look, cam, dof, subject);
+        }
+
         public static void RenderFromCommandLine()
         {
             try
@@ -50,14 +75,7 @@ namespace Showcase.Editor
 
         public static void Render(Take take, Reel reel, string videoPath, string stillsDir, int maxFrames = 0)
         {
-            EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
-            var look = AssetDatabase.LoadAssetAtPath<ShowcaseLook>(LookPath);
-            var cam = GameObject.Find("ShowcaseCamera").GetComponent<Camera>();
-            var volume = UnityEngine.Object.FindObjectsOfType<Volume>().First(v => v.isGlobal);
-            volume.profile = UnityEngine.Object.Instantiate(volume.sharedProfile); // never dirty the asset
-            volume.profile.TryGet(out DepthOfField dof);
-
-            var subject = new TakeSubject(take);
+            var (look, cam, dof, subject) = Setup(take);
             using var puppets = new ReplayPuppets(take, look, null);
             using var frame = new FrameAccumulator(reel.width, reel.height, cam);
 
@@ -72,7 +90,7 @@ namespace Showcase.Editor
                 float start = subject.AnchorTime(shot);
                 float end = start + shot.duration;
                 int frames = Mathf.RoundToInt(shot.duration * reel.fps);
-                Debug.Log($"[showcase] shot '{shot.name}' ({shot.type}) {start:F2}s..{end:F2}s, {frames} frames");
+                Debug.Log($"[showcase] shot '{shot.name}' ({shot.Type}) {start:F2}s..{end:F2}s, {frames} frames");
                 for (int f = 0; f < frames; f++)
                 {
                     float t = start + f / (float)reel.fps;
@@ -111,13 +129,7 @@ namespace Showcase.Editor
         /// </summary>
         public static void RenderStill(Take take, Shot shot, float u, int width, int height, int subframes, string pngPath)
         {
-            EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
-            var look = AssetDatabase.LoadAssetAtPath<ShowcaseLook>(LookPath);
-            var cam = GameObject.Find("ShowcaseCamera").GetComponent<Camera>();
-            var volume = UnityEngine.Object.FindObjectsOfType<Volume>().First(v => v.isGlobal);
-            volume.profile = UnityEngine.Object.Instantiate(volume.sharedProfile);
-            volume.profile.TryGet(out DepthOfField dof);
-            var subject = new TakeSubject(take);
+            var (look, cam, dof, subject) = Setup(take);
             using var puppets = new ReplayPuppets(take, look, null);
             using var frame = new FrameAccumulator(width, height, cam);
             float start = subject.AnchorTime(shot), end = start + shot.duration;

@@ -20,7 +20,7 @@ namespace Showcase
             this.take = take;
             arm = take.actors.FirstOrDefault(a => a.kind == ActorKind.Arm)
                   ?? throw new ArgumentException("take has no arm");
-            basePart = FindPart(arm, "upperarm", 0);
+            basePart = 0; // the arm root: the shoulder ball the whole chain hangs from
             handPart = FindPart(arm, "palm", arm.partPaths.Length - 1);
             balls = take.actors.Where(a => a.kind == ActorKind.Ball).ToArray();
             targets = take.actors.Where(a => a.kind == ActorKind.Target).ToArray();
@@ -91,7 +91,20 @@ namespace Showcase
             this.look = look;
             root = new GameObject("ReplayPuppets").transform;
             root.SetParent(parent, false);
+            DropNestedBalls(take);
             foreach (var a in take.actors) puppets[a.id] = Build(a);
+        }
+
+        /// <summary>
+        /// Takes recorded before the recorder skipped nested ProjectileScripts hold each ball twice:
+        /// once from the prefab root and once from its mesh child. Keep the root's record.
+        /// </summary>
+        public static void DropNestedBalls(Take take)
+        {
+            var roots = take.actors.Where(a => a.kind == ActorKind.Ball && a.partPaths.Length == 1 && a.partPaths[0].Length > 0)
+                .Select(a => a.birthStep).ToHashSet();
+            int removed = take.actors.RemoveAll(a => a.kind == ActorKind.Ball && a.partPaths.Length == 1 && a.partPaths[0].Length == 0 && roots.Contains(a.birthStep));
+            if (removed > 0) Debug.Log($"[showcase] dropped {removed} nested duplicate balls from an older take");
         }
 
         (GameObject, Transform[], Renderer[]) Build(TakeActor a)
@@ -104,7 +117,7 @@ namespace Showcase
             for (int i = 0; i < parts.Length; i++)
             {
                 var source = string.IsNullOrEmpty(a.partPaths[i]) ? prefab.transform : prefab.transform.Find(a.partPaths[i]);
-                var mesh = source != null ? source.GetComponent<MeshFilter>()?.sharedMesh : null;
+                var mesh = source != null && source.TryGetComponent<MeshFilter>(out var mf) ? mf.sharedMesh : null;
                 if (mesh == null) Debug.LogWarning($"[showcase] no mesh for {a.kind} part '{a.partPaths[i]}' in {prefab.name}");
                 var part = new GameObject(a.partPaths[i].Length > 0 ? a.partPaths[i].Replace('/', '.') : prefab.name);
                 part.transform.SetParent(go.transform, false);

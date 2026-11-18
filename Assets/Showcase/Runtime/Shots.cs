@@ -34,7 +34,8 @@ namespace Showcase
     public class Shot
     {
         public string name = "";
-        public ShotType type = ShotType.Wide;
+        public string type = "Wide";   // Wide | Orbit | Close | Follow (a string: JsonUtility cannot read enum names)
+        public ShotType Type => (ShotType)Enum.Parse(typeof(ShotType), type, true);
         public string anchor = "hit"; // hit | episode | time
         public int index;             // which hit or episode
         public float offset = -3f;    // seconds relative to the anchor
@@ -79,7 +80,7 @@ namespace Showcase
 
             Vector3 lookAt, focus;
             float dist;
-            switch (shot.type)
+            switch (shot.Type)
             {
                 case ShotType.Close:
                     lookAt = hand; focus = hand;
@@ -100,8 +101,8 @@ namespace Showcase
                 {
                     lookAt = Vector3.Lerp(armBase, target, 0.5f) + Vector3.up * 0.25f * L;
                     focus = Vector3.Lerp(armBase, hand, 0.5f);
-                    float span = Vector3.Distance(armBase, target) + 2f * L;
-                    dist = 0.5f * span / Mathf.Tan(0.5f * shot.fov * Mathf.Deg2Rad) * 1.15f * shot.distance;
+                    float span = Vector3.Distance(armBase, target) + 1.1f * L;
+                    dist = 0.5f * span / Mathf.Tan(0.5f * shot.fov * Mathf.Deg2Rad) * 1.05f * shot.distance;
                     break;
                 }
             }
