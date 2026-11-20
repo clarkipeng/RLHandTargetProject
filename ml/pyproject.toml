@@ -1,0 +1,25 @@
+[project]
+name = "rlhand-ml"
+version = "0.1.0"
+description = "Headless PPO training for the arm that grasps, throws and hits a target (ML-Agents)."
+requires-python = "==3.10.*"
+dependencies = [
+    "mlagents==0.30.0",
+    "torch==1.11.0",
+    "tensorboard",
+    "matplotlib",
+    "imageio-ffmpeg",
+    "setuptools<70",
+    "protobuf==3.20.3",
+]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
