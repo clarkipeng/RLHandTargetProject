@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 RUN="${1:?usage: train.sh <run_id> [--build] [--resume | --init <run>] [--envs N] [--arenas N] [--gpu]}"; shift
-BUILD=0; RESUME=(); ENVS=12; ARENAS=8; DEVICE=cpu; PROJECT=()
+BUILD=0; RESUME=(); ENVS=12; ARENAS=8   # memory: each player is about 110 MB; keep the project under about 3 GB; DEVICE=cpu; PROJECT=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --build) BUILD=1 ;;

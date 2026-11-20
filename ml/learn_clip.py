@@ -37,7 +37,7 @@ def segment(clip, web, label, rate, seconds, out):
           f"drawtext=expansion=none:fontfile={BOLD}:text='{esc(label)}':x=64:y=56:fontsize=40:fontcolor=0xE9E6E0,"
           f"drawtext=expansion=none:fontfile={FONT}:text='{esc(f'held-out hit rate {rate * 100:.0f}%')}':x=64:y=110:fontsize=30:fontcolor=0xFFC468,"
           + ",".join(draws) + flash + f",fade=t=in:st=0:d=0.4,fade=t=out:st={seconds - 0.4}:d=0.4")
-    subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-i", clip, "-vf", vf, "-an", "-r", "30",
+    subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-threads", "4", "-i", clip, "-vf", vf, "-an", "-r", "30",
                     "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", out], check=True)
     return len(hits), len(starts)
 
@@ -57,7 +57,7 @@ def main():
             parts.append(p)
         lst = Path(tmp) / "list.txt"
         lst.write_text("".join(f"file '{p}'\n" for p in parts))
-        subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
+        subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-threads", "4", "-f", "concat", "-safe", "0", "-i", str(lst),
                         "-c:v", "libx264", "-crf", "18", "-preset", "slow", "-pix_fmt", "yuv420p", "-movflags", "+faststart", a.out], check=True)
     print(a.out)
 
