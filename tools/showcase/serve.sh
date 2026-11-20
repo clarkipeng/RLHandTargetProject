@@ -3,7 +3,7 @@
 #   tools/showcase/serve.sh [take.json]
 # With a take (written by render.sh), publishes it as the current policy; open pages pick it up within 30 s.
 # Always makes sure the site is set up and served on $AGENTWORLD_SEAT_PORT (default 42050, localhost),
-# and points the rl-arm wall at it.
+# and points the rl-arm wall at it. TensorBoard (tools/train/board.sh) is proxied at /tensorboard/.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SITE="$ROOT/renders/web"
@@ -33,8 +33,16 @@ if [[ $# -gt 0 ]]; then
   echo "published $name"
 fi
 
-if ! lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  nohup python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$SITE" >"$SITE/server.log" 2>&1 &
+# Our server already up? (recorded port). Otherwise use the seat port, or the next free one when another program holds it
+# (on the Windows PC, mirrored networking shares ports with Windows, and OneDrive can sit on the seat port).
+free() { python3 -c "import socket,sys;s=socket.socket();s.bind(('127.0.0.1',int(sys.argv[1])));s.close()" "$1" 2>/dev/null; }
+ours() { curl -s -m 3 -o /dev/null "http://127.0.0.1:$1/viewer.js"; }
+if [[ -f "$SITE/port" ]] && ours "$(cat "$SITE/port")"; then
+  PORT="$(cat "$SITE/port")"
+else
+  while ! free "$PORT"; do PORT=$((PORT + 2)); done
+  echo "$PORT" > "$SITE/port"
+  nohup python3 "$ROOT/tools/showcase/server.py" "$SITE" "$PORT" "${TENSORBOARD_PORT:-42051}" >"$SITE/server.log" 2>&1 &
   sleep 1
   echo "serving $SITE on http://localhost:$PORT/"
 fi
@@ -42,5 +50,5 @@ fi
 GALLERY="$HOME/.agentworld/gallery/rl-arm"
 if [[ -d "$GALLERY" ]]; then
   echo "http://localhost:$PORT/" > "$GALLERY/live.url"
-  python3 "$HOME/.agentworld/gallery/make-index.py" >/dev/null
+  [[ -f "$HOME/.agentworld/gallery/make-index.py" ]] && python3 "$HOME/.agentworld/gallery/make-index.py" >/dev/null || true
 fi

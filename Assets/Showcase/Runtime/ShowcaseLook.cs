@@ -20,6 +20,8 @@ namespace Showcase
         public Material ball;
         public Material target;
         public Material targetHit;
+        [Tooltip("Static scenery recorded from training, such as the ball's pedestal.")]
+        public Material prop;
 
         [Header("Dressing")]
         [Tooltip("Rebuild sphere, capsule and box parts as dense rounded meshes.")]
@@ -36,6 +38,7 @@ namespace Showcase
             {
                 case ActorKind.Ball: return ball;
                 case ActorKind.Target: return target;
+                case ActorKind.Prop: return prop != null ? prop : joint != null ? joint : armShell;
                 default: return IsHandPart(partPath) ? handShell : armShell;
             }
         }

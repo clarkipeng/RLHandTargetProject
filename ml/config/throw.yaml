@@ -1,5 +1,5 @@
 # One curriculum for the whole task: grasp -> lift -> throw -> near -> mid -> far targets.
-# Every lesson pays +1 for its own success on top of a shaping potential worth at most 0.3,
+# Every lesson pays +1 for its own success on top of a shaping potential worth at most 0.4,
 # so "mean reward above ~1" means "most episodes succeed" in every lesson (see Assets/Training/Runtime/ThrowAgent.cs).
 behaviors:
   Throw:

@@ -27,6 +27,8 @@ until flock -n 9 && ! editor_running; do
   sleep 10; waited=$((waited + 10))
 done
 
+WSL_FFMPEG="$(ls "$ROOT"/ml/.venv/lib/python3.10/site-packages/imageio_ffmpeg/binaries/ffmpeg-linux-* 2>/dev/null | head -1)"
+[[ -n "$WSL_FFMPEG" ]] && args+=(-wslFfmpeg "$WSL_FFMPEG")
 "$UNITY" -batchmode ${gfx[@]+"${gfx[@]}"} -disable-audio -projectPath "$WIN_PROJECT" ${args[@]+"${args[@]}"} &
 pid=$!
 sleep 3

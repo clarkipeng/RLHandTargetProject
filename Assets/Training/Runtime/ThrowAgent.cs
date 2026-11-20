@@ -12,7 +12,7 @@ namespace Training
     /// The curriculum (ml/config/throw.yaml) sets the environment parameter "lesson":
     ///   0 grasp, 1 lift, 2 throw toward a wide zone, 3 near targets, 4 mid targets, 5 far and varied targets.
     /// Every lesson pays +1 for its own success and shares one bounded shaping potential
-    /// (reach the ball, hold it, lift it; at most 0.3 per episode), so the reward measure means the same thing in every lesson.
+    /// (reach the ball, hold it, lift it; at most 0.4 per episode), so the reward measure means the same thing in every lesson.
     /// Throws also earn up to 0.5 for how close the ball flew to the target.
     /// Targets whose azimuth falls in the held-out bands (TargetSampler) are never used in training; "eval_target" picks one of them.
     /// </summary>
@@ -23,7 +23,7 @@ namespace Training
         [HideInInspector] public int armLayer, arenaIndex, arenaCount = 1;
         public const float Scale = 16f;            // the arm's length; observations are in arm lengths
         public const float FloorY = -15f;          // top of the ground, relative to the shoulder
-        public static readonly Vector3 PedestalTop = new Vector3(-11f, -8f, 0f);
+        public static readonly Vector3 PedestalTop = new Vector3(-14f, -9f, 0f); // ~10 from the moving shoulder joint at x = -8
         public const float PedestalHalf = 2f;
         public const int PhysicsStepsPerDecision = 8; // 240 Hz physics, 30 Hz decisions
         public const float EpisodeSeconds = 8f;
@@ -65,8 +65,10 @@ namespace Training
             {
                 var ab = c.boneToTransform[b].GetComponent<ArticulationBody>();
                 var d = new[] { ab.xDrive, ab.yDrive, ab.zDrive };
+                var locks = new[] { ab.twistLock, ab.swingYLock, ab.swingZLock };
+                bool revolute = ab.jointType == ArticulationJointType.RevoluteJoint;
                 for (int axis = 0; axis < 3; axis++)
-                    if (d[axis].upperLimit - d[axis].lowerLimit != 0)
+                    if (d[axis].upperLimit - d[axis].lowerLimit != 0 && (revolute || locks[axis] != ArticulationDofLock.LockedMotion))
                         yield return (ab, axis, d[axis].lowerLimit, d[axis].upperLimit);
             }
         }
@@ -141,15 +143,15 @@ namespace Training
             foreach (var b in bodies)
             {
                 if (b.isRoot) continue;
-                b.jointPosition = new ArticulationReducedSpace(new float[b.dofCount]);
-                b.jointVelocity = new ArticulationReducedSpace(new float[b.dofCount]);
+                b.jointPosition = Zero(b.dofCount);
+                b.jointVelocity = Zero(b.dofCount);
                 b.velocity = Vector3.zero;
                 b.angularVelocity = Vector3.zero;
             }
             for (int i = 0; i < drives.Count; i++)
             {
                 var (_, _, lo, hi) = drives[i];
-                float rest = Mathf.Clamp((0f - (lo + hi) / 2f) / ((hi - lo) / 2f), -1f, 1f);
+                float rest = lo < 0f && hi > 0f ? 0f : Mathf.Clamp((0f - (lo + hi) / 2f) / ((hi - lo) / 2f), -1f, 1f);
                 smoothed[i] = action[i] = Mathf.Clamp(rest + (evalTarget >= 0 ? 0f : Random.Range(-0.05f, 0.05f)), -1f, 1f);
             }
             ApplyDrives();
@@ -178,6 +180,9 @@ namespace Training
             potential = Potential();
         }
 
+        static ArticulationReducedSpace Zero(int dofs) =>
+            dofs == 1 ? new ArticulationReducedSpace(0f) : dofs == 2 ? new ArticulationReducedSpace(0f, 0f) : new ArticulationReducedSpace(0f, 0f, 0f);
+
         int HandContacts(out bool thumbPalm)
         {
             int n = 0; thumbPalm = false;
@@ -191,10 +196,10 @@ namespace Training
 
         float Potential()
         {
-            float reach = 1f - Mathf.Clamp01((Grip - ball.position).magnitude / 10f);
+            float reach = 1f - Mathf.Clamp01((Grip - ball.position).magnitude / 25f);
             bool g = Grasped;
             float lift = g && !OnPedestal ? Mathf.Clamp01(BallHeightAboveRest / 4f) : 0f;
-            return 0.1f * reach + 0.1f * (g ? 1f : 0f) + 0.1f * lift;
+            return 0.2f * reach + 0.1f * (g ? 1f : 0f) + 0.1f * lift;
         }
 
         public override void CollectObservations(VectorSensor sensor)
@@ -243,7 +248,14 @@ namespace Training
                 jerk += (v - action[i]) * (v - action[i]);
                 action[i] = v;
             }
-            AddReward(-0.0005f * jerk);
+            AddReward(-0.0001f * jerk);
+        }
+
+        /// <summary>Actions are relative to the rest pose: 0 holds the joint at rest (0 degrees), +1 and -1 reach its limits.</summary>
+        static float DriveTarget(float a, float lo, float hi)
+        {
+            if (lo < 0f && hi > 0f) return a >= 0f ? a * hi : -a * lo;
+            return (lo + hi) / 2f + a * (hi - lo) / 2f; // a joint whose range excludes rest: centred mapping
         }
 
         void ApplyDrives()
@@ -251,7 +263,7 @@ namespace Training
             for (int i = 0; i < drives.Count; i++)
             {
                 var (body, axis, lo, hi) = drives[i];
-                float t = (lo + hi) / 2f + smoothed[i] * (hi - lo) / 2f;
+                float t = DriveTarget(smoothed[i], lo, hi);
                 if (axis == 0) { var d = body.xDrive; d.target = t; body.xDrive = d; }
                 else if (axis == 1) { var d = body.yDrive; d.target = t; body.yDrive = d; }
                 else { var d = body.zDrive; d.target = t; body.zDrive = d; }

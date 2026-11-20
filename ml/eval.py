@@ -49,7 +49,7 @@ def main():
     log = HERE / "results" / "eval_player.log"
     env = UnityEnvironment(str(SHIM), base_port=a.port, side_channels=[params, engine], no_graphics=True,
                            additional_args=args + ["-logFile", str(log)], timeout_wait=120)
-    engine.set_configuration_parameters(time_scale=1.0 if a.take else 50.0, target_frame_rate=-1, capture_frame_rate=0)
+    engine.set_configuration_parameters(time_scale=20.0 if a.take else 50.0, target_frame_rate=-1, capture_frame_rate=0)
     params.set_float_parameter("eval_target", -2.0)
     params.set_float_parameter("lesson", 5.0)
     env.reset()
@@ -57,6 +57,8 @@ def main():
     returns, running = [], {}
     t0 = time.time()
     want = a.episodes
+    if a.take:
+        want = 10**9  # record until the player has written the take and quit
     try:
         while len(returns) < want:
             dec, term = env.get_steps(name)
@@ -68,8 +70,15 @@ def main():
                 act = sess.run([out], {inp: dec.obs[0].astype(np.float32)})[0]
                 env.set_actions(name, ActionTuple(continuous=np.clip(act, -1, 1)))
             env.step()
+    except Exception as e:
+        if not a.take: raise
+        print(f"player finished the take ({type(e).__name__})")
     finally:
-        env.close()
+        try: env.close()
+        except Exception: pass
+    if a.take:
+        print(json.dumps({"take": str(take), "episodes": len(returns), "hits": int((np.array(returns) > HIT_RETURN).sum())}))
+        return 0
     returns = np.array(returns[:want])
     hits = int((returns > HIT_RETURN).sum())
     m = re.search(r"-(\d+)\.onnx$", onnx.name)

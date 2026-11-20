@@ -44,7 +44,7 @@ namespace Showcase.Editor
             sb.Append($",\"floorY\":{F(UnityEngine.Object.FindObjectOfType<Stage>()?.floorY ?? FloorY())}");
             sb.Append(",\"actors\":[");
             bool firstActor = true;
-            foreach (var a in take.actors)
+            foreach (var a in take.actors.Where(x => x.kind != ActorKind.Prop)) // the live view draws its own pedestal-free stage
             {
                 var prefab = a.kind == ActorKind.Arm ? look.armPrefab : a.kind == ActorKind.Ball ? look.ballPrefab : look.targetPrefab;
                 int first = Mathf.CeilToInt(a.birthStep * take.stepSeconds * Hz);

@@ -76,6 +76,7 @@ namespace Showcase
                 if (ball.transform.parent == null || ball.transform.parent.GetComponentInParent<ProjectileScript>() == null)
                     Track(ball.transform, ActorKind.Ball); // the prefab nests a second ProjectileScript; keep the outermost
             foreach (var target in GameObject.FindGameObjectsWithTag("target")) Track(target.transform, ActorKind.Target);
+            foreach (var prop in FindObjectsOfType<Training.ShowcaseProp>()) Track(prop.transform, ActorKind.Prop); // the ball's pedestal
         }
 
         void Track(Transform root, ActorKind kind)

@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace Showcase
 {
-    public enum ActorKind : byte { Arm = 0, Ball = 1, Target = 2 }
+    public enum ActorKind : byte { Arm = 0, Ball = 1, Target = 2, Prop = 3 }
 
     /// <summary>
     /// One rigid visual part of an actor, sampled once per physics step.
