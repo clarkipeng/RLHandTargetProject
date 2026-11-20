@@ -282,12 +282,13 @@ namespace Training
         // Runs every physics step, on the state left by the previous step.
         void Evaluate()
         {
+            contacts.Refresh();
             int n = HandContacts(out bool tp);
             bool grasped = n >= 2 && tp;
-            graspSteps = grasped ? graspSteps + 1 : 0;
+            graspSteps = grasped ? graspSteps + 1 : Mathf.Max(0, graspSteps - 3); // contacts flicker; brief slips only cost a little
             if (graspSteps > 0) everGrasped = true;
             bool lifted = grasped && !OnPedestal && BallHeightAboveRest > 2f;
-            liftSteps = lifted ? liftSteps + 1 : 0;
+            liftSteps = lifted ? liftSteps + 1 : Mathf.Max(0, liftSteps - 3);
             if (liftSteps >= 24) everLifted = true;   // 0.1 s off the pedestal, held
 
             if (!thrown)
@@ -331,6 +332,7 @@ namespace Training
             if (landed || flewAway || timeout || (thrown && steps * Time.fixedDeltaTime >= EpisodeSeconds))
             {
                 if (thrown && lesson >= 2) AddReward(0.5f * Mathf.Exp(-Mathf.Max(0f, minGap) / 8f));
+                if (landed && !thrown) AddReward(-potential - 0.1f); // dropped: hand back the shaping (terminal potential 0) and a little more
                 Finish(false, timeout && !landed);
             }
         }

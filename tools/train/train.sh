@@ -6,12 +6,13 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-RUN="${1:?usage: train.sh <run_id> [--build] [--resume] [--envs N] [--arenas N]}"; shift
+RUN="${1:?usage: train.sh <run_id> [--build] [--resume | --init <run>] [--envs N] [--arenas N]}"; shift
 BUILD=0; RESUME=(); ENVS=12; ARENAS=8
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --build) BUILD=1 ;;
     --resume) RESUME=(--resume) ;;
+    --init) RESUME=(--initialize-from "$2"); shift ;;
     --envs) ENVS="$2"; shift ;;
     --arenas) ARENAS="$2"; shift ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
