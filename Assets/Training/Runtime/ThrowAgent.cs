@@ -341,7 +341,9 @@ namespace Training
             {
                 if (thrown && lesson >= 2) AddReward(0.5f * Mathf.Exp(-Mathf.Max(0f, minGap) / 8f));
                 if (landed && !thrown) AddReward(-potential - 0.1f); // dropped: hand back the shaping (terminal potential 0) and a little more
-                Finish(false, timeout && !landed);
+                bool heldOn = timeout && !landed && !thrown && lesson >= 2;
+                if (heldOn) AddReward(-potential); // throw lessons: holding on to the end is worth nothing; any throw beats it
+                Finish(false, timeout && !landed && !heldOn);
             }
         }
 
