@@ -44,6 +44,8 @@ namespace Training
                 agent.ballPrefab = ballPrefab;
                 agent.targetPrefab = targetPrefab;
                 agent.armLayer = layer;
+                agent.arenaIndex = i;
+                agent.arenaCount = n;
                 var dr = go.AddComponent<DecisionRequester>();
                 dr.DecisionPeriod = ThrowAgent.PhysicsStepsPerDecision;
                 dr.TakeActionsBetweenDecisions = true;

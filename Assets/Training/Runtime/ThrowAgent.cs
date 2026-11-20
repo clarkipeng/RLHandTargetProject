@@ -20,7 +20,7 @@ namespace Training
     {
         // Set by ArenaSpawner before the agent is enabled.
         [HideInInspector] public GameObject armPrefab, ballPrefab, targetPrefab;
-        [HideInInspector] public int armLayer;
+        [HideInInspector] public int armLayer, arenaIndex, arenaCount = 1;
         public const float Scale = 16f;            // the arm's length; observations are in arm lengths
         public const float FloorY = -15f;          // top of the ground, relative to the shoulder
         public static readonly Vector3 PedestalTop = new Vector3(-11f, -8f, 0f);
@@ -48,7 +48,7 @@ namespace Training
         float[] action, smoothed;
         float smoothing = 0.25f; // per physics step
         int lesson;
-        int evalTarget = -1;
+        int evalTarget = -1, evalEpisodes;
 
         // Episode state
         int steps, graspSteps, liftSteps, noContactSteps;
@@ -131,7 +131,9 @@ namespace Training
         {
             var p = Academy.Instance.EnvironmentParameters;
             lesson = Mathf.RoundToInt(p.GetWithDefault("lesson", 0f));
-            evalTarget = Mathf.RoundToInt(p.GetWithDefault("eval_target", -1f));
+            // eval_target >= 0: that held-out target; -2: every arena cycles through the whole held-out set.
+            int e = Mathf.RoundToInt(p.GetWithDefault("eval_target", -1f));
+            evalTarget = e == -2 ? (arenaIndex + evalEpisodes++ * arenaCount) % TargetSampler.HeldOutCount : e;
             if (evalTarget >= 0) lesson = TargetSampler.FinalLesson;
 
             // Arm: rest pose (straight out), a little noise in the drive targets.
@@ -153,7 +155,7 @@ namespace Training
             ApplyDrives();
 
             // Ball at rest on the pedestal.
-            var rng = evalTarget >= 0 ? new System.Random(1000 + evalTarget) : null;
+            var rng = evalTarget >= 0 ? new System.Random(1000 + 97 * evalTarget + arenaIndex) : null;
             float R(float a, float b) => rng == null ? Random.Range(a, b) : a + (float)rng.NextDouble() * (b - a);
             float m = PedestalHalf - ballRadius * 0.6f;
             ball.position = transform.position + PedestalTop + new Vector3(R(-m, m), ballRadius + 0.01f, R(-m, m));
