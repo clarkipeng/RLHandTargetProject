@@ -25,6 +25,7 @@ if [[ $BUILD == 1 || ! -f "$PLAYER" ]]; then
   tools/train/build.sh || exit 1
 fi
 mkdir -p ml/results/logs
+"$ROOT/tools/win/keepawake.sh" # Windows Modern Standby would freeze the players overnight
 export THROW_PLAYER="$PLAYER" THROW_ARENAS="$ARENAS"
 cd ml
 nohup nice -n 5 uv run mlagents-learn config/throw.yaml --env ../tools/train/player --num-envs "$ENVS" \
