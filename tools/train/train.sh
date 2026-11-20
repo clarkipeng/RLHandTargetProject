@@ -6,8 +6,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-RUN="${1:?usage: train.sh <run_id> [--build] [--resume | --init <run>] [--envs N] [--arenas N]}"; shift
-BUILD=0; RESUME=(); ENVS=12; ARENAS=8
+RUN="${1:?usage: train.sh <run_id> [--build] [--resume | --init <run>] [--envs N] [--arenas N] [--gpu]}"; shift
+BUILD=0; RESUME=(); ENVS=12; ARENAS=8; DEVICE=cpu; PROJECT=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --build) BUILD=1 ;;
@@ -15,6 +15,7 @@ while [[ $# -gt 0 ]]; do
     --init) RESUME=(--initialize-from "$2"); shift ;;
     --envs) ENVS="$2"; shift ;;
     --arenas) ARENAS="$2"; shift ;;
+    --gpu) DEVICE=cuda; PROJECT=(--project gpu) ;;   # PyTorch with CUDA from ml/gpu (the RTX 5070 does the policy updates)
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac; shift
 done
@@ -28,8 +29,8 @@ mkdir -p ml/results/logs
 "$ROOT/tools/win/keepawake.sh" # Windows Modern Standby would freeze the players overnight
 export THROW_PLAYER="$PLAYER" THROW_ARENAS="$ARENAS"
 cd ml
-nohup nice -n 5 uv run mlagents-learn config/throw.yaml --env ../tools/train/player --num-envs "$ENVS" \
-  --run-id "$RUN" --results-dir results --torch-device cpu ${RESUME[@]+"${RESUME[@]}"} \
+nohup nice -n 5 uv run ${PROJECT[@]+"${PROJECT[@]}"} mlagents-learn config/throw.yaml --env ../tools/train/player --num-envs "$ENVS" \
+  --run-id "$RUN" --results-dir results --torch-device "$DEVICE" ${RESUME[@]+"${RESUME[@]}"} \
   > "results/logs/$RUN.log" 2>&1 &
 echo $! > "results/logs/$RUN.pid"
 # Unity players at below-normal priority, like every other Unity process on this PC.
