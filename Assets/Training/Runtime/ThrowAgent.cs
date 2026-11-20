@@ -10,7 +10,7 @@ namespace Training
     /// <summary>
     /// One arm, one resting ball, one target: reach, grasp, lift, wind up, release, hit.
     /// The curriculum (ml/config/throw.yaml) sets the environment parameter "lesson":
-    ///   0 grasp, 1 lift, 2 throw toward a wide zone, 3 near targets, 4 mid targets, 5 far and varied targets.
+    ///   0 grasp (hold it off the pedestal), 1 lift, 2 throw toward a wide zone, 3 near targets, 4 mid targets, 5 far and varied targets.
     /// Every lesson pays +1 for its own success and shares one bounded shaping potential
     /// (reach the ball, hold it, lift it; at most 0.4 per episode), so the reward measure means the same thing in every lesson.
     /// Throws also earn up to 0.5 for how close the ball flew to the target.
@@ -27,6 +27,7 @@ namespace Training
         public const float PedestalHalf = 2f;
         public const int PhysicsStepsPerDecision = 8; // 240 Hz physics, 30 Hz decisions
         public const float EpisodeSeconds = 8f;
+        public const float BallScale = 0.6f;       // radius 0.6: small enough for this hand to close around
 
         SimCharController arm;
         ArticulationBody[] bodies;
@@ -51,7 +52,7 @@ namespace Training
         int evalTarget = -1, evalEpisodes;
 
         // Episode state
-        int steps, graspSteps, liftSteps, noContactSteps;
+        int steps, graspSteps, heldSteps, liftSteps, noContactSteps;
         bool everGrasped, everLifted, thrown, hit;
         float potential, minGap, maxThrowDistance;
         Vector3 releasePoint;
@@ -112,6 +113,12 @@ namespace Training
 
             ball = Instantiate(ballPrefab, root.position, Quaternion.identity, root).GetComponent<Rigidbody>();
             ball.mass = 2f;
+            ball.transform.localScale = Vector3.one * BallScale;
+            ball.GetComponent<SphereCollider>().sharedMaterial = new PhysicMaterial("Grippy")
+            {
+                dynamicFriction = 1f, staticFriction = 1.2f, bounciness = 0.1f,
+                frictionCombine = PhysicMaterialCombine.Maximum, bounceCombine = PhysicMaterialCombine.Minimum,
+            };
             ball.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             ball.interpolation = RigidbodyInterpolation.None;
             ballRadius = ball.GetComponent<SphereCollider>().radius * ball.transform.lossyScale.x;
@@ -173,7 +180,7 @@ namespace Training
             target.transform.localScale = Vector3.one * targetRadius;
             target.SetActive(lesson >= 2);
 
-            steps = graspSteps = liftSteps = noContactSteps = 0;
+            steps = graspSteps = heldSteps = liftSteps = noContactSteps = 0;
             everGrasped = everLifted = thrown = hit = false;
             minGap = float.MaxValue;
             maxThrowDistance = 0f;
@@ -306,7 +313,8 @@ namespace Training
                 }
             }
 
-            if (lesson == 0 && graspSteps >= 96) { Succeed(); return; }   // 0.4 s grasp
+            heldSteps = grasped && !OnPedestal ? heldSteps + 1 : Mathf.Max(0, heldSteps - 3);
+            if (lesson == 0 && heldSteps >= 72) { Succeed(); return; }    // 0.3 s held off the pedestal
             if (lesson == 1 && liftSteps >= 72 && BallHeightAboveRest > 3f) { Succeed(); return; } // 0.3 s lifted 3 above rest
 
             Vector3 b = Local(ball.position);
