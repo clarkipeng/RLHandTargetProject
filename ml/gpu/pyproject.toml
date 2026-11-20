@@ -9,6 +9,7 @@ dependencies = [
     "tensorboard",
     "matplotlib",
     "imageio-ffmpeg",
+    "onnx==1.16.2",
     "onnxruntime==1.12.1",
     "setuptools<70",
     "protobuf==3.20.3",

@@ -502,6 +502,23 @@ wheels = [
 ]
 
 [[package]]
+name = "onnx"
+version = "1.16.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d8/83/09d7715612f72236b439eba6ebfecdaac59d99562dfc1d7a90dddb6168e1/onnx-1.16.2.tar.gz", hash = "sha256:b33a282b038813c4b69e73ea65c2909768e8dd6cc10619b70632335daf094646", size = 12308861, upload-time = "2024-08-01T13:12:17.539Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/49/0c/f5b531a10344648ef577d0c3eca70fa40156928f1f927237eb6f107c74bb/onnx-1.16.2-cp310-cp310-macosx_11_0_universal2.whl", hash = "sha256:ab0a1aa6b0470020ea3636afdce3e2a67f856fefe4be8c73b20371b07fcde69c", size = 16505840, upload-time = "2024-08-01T13:10:23.847Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/8f/65582450430242811ec955806a870437a9d66f9dceccd53d05dd902d76ad/onnx-1.16.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a449122a49534bb9c2b6f16c8493b606ef0accda6b9dbf0c513ca4b31ebe8b38", size = 15793170, upload-time = "2024-08-01T13:10:27.781Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/3d/d28484e5d87d4500db0d3b44836d9cd31d88f1efbe168356dbb1dd4f2571/onnx-1.16.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ec6a425e59291fff430da4a884aa07a1d0cbb5dcd22cc78f6cf4ba5adb9f3367", size = 15924158, upload-time = "2024-08-01T13:10:31.591Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/b9/0588350b9c779246a4f0302961e7b065c181fee70bb4a1219f13e4698fc1/onnx-1.16.2-cp310-cp310-win32.whl", hash = "sha256:55fbaf38acd4cd8fdd0b4f36871fb596b075518d3e981acc893f2ab887d1891a", size = 14337983, upload-time = "2024-08-01T13:10:35.103Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/e4/1bc3ae56e6581587926a50a5c9dce3cfacf510e592e2512c7f5f2a9a4859/onnx-1.16.2-cp310-cp310-win_amd64.whl", hash = "sha256:4e496d301756e0a22fd2bdfac24b861c7b1ddbdd9ce7677b2a252c00c4c8f2a7", size = 14440121, upload-time = "2024-08-01T13:10:38.562Z" },
+]
+
+[[package]]
 name = "onnxruntime"
 version = "1.12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -650,6 +667,7 @@ dependencies = [
     { name = "imageio-ffmpeg" },
     { name = "matplotlib" },
     { name = "mlagents" },
+    { name = "onnx" },
     { name = "onnxruntime" },
     { name = "protobuf" },
     { name = "setuptools" },
@@ -662,6 +680,7 @@ requires-dist = [
     { name = "imageio-ffmpeg" },
     { name = "matplotlib" },
     { name = "mlagents", specifier = "==0.30.0" },
+    { name = "onnx", specifier = "==1.16.2" },
     { name = "onnxruntime", specifier = "==1.12.1" },
     { name = "protobuf", specifier = "==3.20.3" },
     { name = "setuptools", specifier = "<70" },
