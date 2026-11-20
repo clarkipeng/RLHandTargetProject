@@ -20,6 +20,7 @@ MonoBehaviour:
   ball: {fileID: 2100000, guid: feda2a69c35884d0a9c0046f69a48691, type: 2}
   target: {fileID: 2100000, guid: 1ecb2d5f4050c48fd94b71377d2b12da, type: 2}
   targetHit: {fileID: 2100000, guid: 3a08aa5b83db14a45aa30abcf01d07a6, type: 2}
+  prop: {fileID: 2100000, guid: 2f27cbcb057b4db4b830c1b4d83399c4, type: 2}
   smoothMeshes: 1
   joint: {fileID: 2100000, guid: 38978a769df874678be61c92bc5ce6e5, type: 2}
   targetDressing: {fileID: 9136002750899449681, guid: 70062f6ec7f9d4e2cba763f0139704bd, type: 3}

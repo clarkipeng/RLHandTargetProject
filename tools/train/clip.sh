@@ -18,5 +18,5 @@ if ! grep -qE "^  prop: \{fileID: [1-9]" Assets/Showcase/Looks/MinimalLook.asset
   rsync -a --exclude '*.cs' --exclude '*.cs.meta' /mnt/c/agentworld/rlhand/Assets/Showcase/ Assets/Showcase/
 fi
 tools/win/unity.sh --graphics -executeMethod Showcase.Editor.ReplayRenderer.RenderFromCommandLine \
-  -take "$TAKE" -look "$LOOK" -reel Assets/Showcase/Reels/eval.json -out "$OUT" -logFile "${OUT%.mp4}.render.log"
+  -take "$TAKE" -look "$LOOK" -reel Assets/Showcase/Reels/eval.json -out "$OUT" -stills "${OUT%.mp4}-stills" -logFile "${OUT%.mp4}.render.log"
 ls -la "$OUT"
