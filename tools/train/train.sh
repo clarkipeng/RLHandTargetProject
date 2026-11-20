@@ -28,6 +28,15 @@ if [[ $BUILD == 1 || ! -f "$PLAYER" ]]; then
 fi
 mkdir -p ml/results/logs
 "$ROOT/tools/win/keepawake.sh" # Windows Modern Standby would freeze the players overnight
+# A resume that dies while loading saves a fresh step-0 state over the run's own; keep a copy of the real one.
+if [[ -f "ml/results/$RUN/Throw/checkpoint.pt" ]] && python3 - "ml/results/$RUN/run_logs/training_status.json" <<'PY'
+import json, sys
+try: sys.exit(0 if json.load(open(sys.argv[1]))["Throw"]["checkpoints"][-1]["steps"] > 0 else 1)
+except Exception: sys.exit(1)
+PY
+then
+  mkdir -p "ml/results/$RUN/backup" && cp "ml/results/$RUN/Throw/checkpoint.pt" "ml/results/$RUN/run_logs/training_status.json" "ml/results/$RUN/backup/"
+fi
 export THROW_PLAYER="$PLAYER" THROW_ARENAS="$ARENAS"
 cd ml
 nohup nice -n 5 uv run ${PROJECT[@]+"${PROJECT[@]}"} mlagents-learn config/throw.yaml --env ../tools/train/player --num-envs "$ENVS" \
