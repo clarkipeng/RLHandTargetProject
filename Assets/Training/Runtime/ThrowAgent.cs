@@ -310,6 +310,13 @@ namespace Training
                     thrown = true;
                     releasePoint = Local(ball.position);
                     Academy.Instance.StatsRecorder.Add("Task/ReleaseSpeed", ball.velocity.magnitude);
+                    if (lesson >= 2)
+                    {
+                        // Immediate feedback on the throw itself: how close the ball's ballistic flight will pass the target.
+                        float predicted = PredictedGap(releasePoint, ball.velocity);
+                        Academy.Instance.StatsRecorder.Add("Task/PredictedGap", predicted);
+                        AddReward(0.5f * Mathf.Exp(-Mathf.Max(0f, predicted) / 8f));
+                    }
                 }
             }
 
@@ -339,12 +346,26 @@ namespace Training
             bool timeout = steps * Time.fixedDeltaTime >= EpisodeSeconds;
             if (landed || flewAway || timeout || (thrown && steps * Time.fixedDeltaTime >= EpisodeSeconds))
             {
-                if (thrown && lesson >= 2) AddReward(0.5f * Mathf.Exp(-Mathf.Max(0f, minGap) / 8f));
+                if (thrown && lesson >= 2) AddReward(0.25f * Mathf.Exp(-Mathf.Max(0f, minGap) / 8f));
                 if (landed && !thrown) AddReward(-potential - 0.1f); // dropped: hand back the shaping (terminal potential 0) and a little more
                 bool heldOn = timeout && !landed && !thrown && lesson >= 2;
                 if (heldOn) AddReward(-potential); // throw lessons: holding on to the end is worth nothing; any throw beats it
                 Finish(false, timeout && !landed && !heldOn);
             }
+        }
+
+        /// <summary>Closest approach (surface to surface) of a drag-free flight from p with velocity v to the target, until the floor.</summary>
+        float PredictedGap(Vector3 p, Vector3 v)
+        {
+            float best = float.MaxValue, dt = 1f / 60f;
+            Vector3 g = Physics.gravity;
+            for (float t = 0f; t < 6f; t += dt)
+            {
+                Vector3 x = p + v * t + 0.5f * g * t * t;
+                best = Mathf.Min(best, (x - targetPos).magnitude - targetRadius - ballRadius);
+                if (x.y - ballRadius < FloorY) break;
+            }
+            return best;
         }
 
         void Succeed()

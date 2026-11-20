@@ -26,7 +26,8 @@ for onnx in $(ls "$RES"/Throw/Throw-*.onnx 2>/dev/null | sort -t- -k2 -n); do
   m=$(( step / 1000000 ))
   first=$([[ -z "$(ls "$CLIPS"/*.mp4 2>/dev/null)" ]] && echo 1 || echo 0)
   if [[ $first == 1 || $(( m % CLIP_EVERY )) == 0 && ! -f "$CLIPS/eval-${m}M.mp4" ]] || python3 -c "import sys;sys.exit(0 if float(sys.argv[1])>float(sys.argv[2]) and float(sys.argv[1])>0 else 1)" "$rate" "$before"; then
-    "$ROOT/tools/train/clip.sh" "$onnx" "$CLIPS/eval-${m}M.mp4" && cp "$CLIPS/eval-${m}M.mp4" "$WALL/train-eval-$(printf %04d $m)M.mp4"
+    lesson="$(uv run python stats.py "$RES" "Environment/Lesson Number/lesson" 2>/dev/null | awk 'NR==2{printf "%d", $NF}')"
+    "$ROOT/tools/train/clip.sh" "$onnx" "$CLIPS/eval-${m}M.mp4" --lesson "${lesson:-5}" && cp "$CLIPS/eval-${m}M.mp4" "$WALL/train-eval-$(printf %04d $m)M.mp4"
   fi
 done
 uv run python chart.py "$RES" "$WALL/train-hit-rate.png" >/dev/null

@@ -31,6 +31,7 @@ def main():
     ap.add_argument("--take", help="also record a .take of the rollout (forces one arena)")
     ap.add_argument("--seconds", type=float, default=60.0, help="take length")
     ap.add_argument("--port", type=int, default=6100)
+    ap.add_argument("--lesson", type=int, help="with --take: show this curriculum lesson's training targets instead of the held-out set")
     a = ap.parse_args()
 
     onnx = Path(a.onnx).resolve()
@@ -50,8 +51,9 @@ def main():
     env = UnityEnvironment(str(SHIM), base_port=a.port, side_channels=[params, engine], no_graphics=True,
                            additional_args=args + ["-logFile", str(log)], timeout_wait=120)
     engine.set_configuration_parameters(time_scale=20.0 if a.take else 50.0, target_frame_rate=-1, capture_frame_rate=0)
-    params.set_float_parameter("eval_target", -2.0)
-    params.set_float_parameter("lesson", 5.0)
+    show_lesson = a.take and a.lesson is not None
+    params.set_float_parameter("eval_target", -1.0 if show_lesson else -2.0)
+    params.set_float_parameter("lesson", float(a.lesson) if show_lesson else 5.0)
     env.reset()
     name = list(env.behavior_specs)[0]
     returns, running = [], {}
