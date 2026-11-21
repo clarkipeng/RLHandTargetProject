@@ -14,8 +14,14 @@ namespace Showcase
         readonly TakeActor[] balls, targets;
 
         public float ArmLength { get; }
+        public float StepSeconds => take.stepSeconds;
 
-        public TakeSubject(Take take)
+        /// <summary>One episode of the take: the ball leaves the hand at release and the episode ends at end.</summary>
+        public struct Throw { public int start, release, end; public bool hit; }
+        public readonly List<Throw> throws = new List<Throw>();
+
+        /// <param name="contactDistance">Ball-to-target center distance that counts as a hit (0: trust the recorded hits).</param>
+        public TakeSubject(Take take, float contactDistance = 0f)
         {
             this.take = take;
             arm = take.actors.FirstOrDefault(a => a.kind == ActorKind.Arm)
@@ -30,6 +36,54 @@ namespace Showcase
                 foreach (var pose in arm.frames[f])
                     reach = Mathf.Max(reach, Vector3.Distance(pose.position, arm.frames[f][basePart].position));
             ArmLength = Mathf.Max(reach, 0.01f);
+            FindThrows(contactDistance);
+        }
+
+        /// <summary>
+        /// Splits the take into throws. A hit ends its episode in the same physics step, before the recorder sees the
+        /// ball's hit flag, so hits are found from the geometry: the episode ends with the ball touching its target.
+        /// The release is where the ball first pulls away from the palm after it settled in the grasp.
+        /// </summary>
+        void FindThrows(float contactDistance)
+        {
+            if (balls.Length == 0 || targets.Length == 0) return;
+            var starts = take.episodeStarts.Count > 0 ? take.episodeStarts : new List<int> { 0 };
+            var recorded = new HashSet<int>(take.hitSteps);
+            for (int i = 0; i < starts.Count; i++)
+            {
+                int start = starts[i], end = (i + 1 < starts.Count ? starts[i + 1] : take.stepCount) - 1;
+                if (end - start < 60) continue;
+                Vector3 BallAt(int k) { Latest(balls, k * take.stepSeconds, out var b); return b; }
+                float Palm(int k) => Vector3.Distance(BallAt(k), arm.Sample(handPart, k).position);
+                // The grasp: the closest the ball gets to the palm; its hold distance is the median just after.
+                int grasp = start; float closest = float.MaxValue;
+                for (int k = start; k <= end; k++) { float d = Palm(k); if (d < closest) { closest = d; grasp = k; } }
+                var hold = new List<float>();
+                for (int k = grasp; k <= Mathf.Min(end, grasp + 120); k++) hold.Add(Palm(k));
+                hold.Sort();
+                float away = 1.35f * hold[hold.Count / 2];
+                int release = grasp;
+                while (release < end && Palm(release) <= away) release++;
+                Target(end * take.stepSeconds, out var target);
+                bool hit = contactDistance > 0f
+                    ? Vector3.Distance(BallAt(end), target) <= contactDistance
+                    : take.hitSteps.Any(h => h >= start && h <= end);
+                hit |= recorded.Any(h => h >= start && h <= end);
+                throws.Add(new Throw { start = start, release = release, end = end, hit = hit && release < end });
+            }
+            // Hit anchors are the inferred hits: the last step before the episode resets.
+            var hits = throws.Where(th => th.hit).Select(th => th.end).ToList();
+            if (hits.Count >= take.hitSteps.Count) { take.hitSteps.Clear(); take.hitSteps.AddRange(hits); }
+            Debug.Log($"[showcase] {throws.Count} throws, {hits.Count} hits (the recorder caught {recorded.Count})");
+        }
+
+        /// <summary>The throw a shot starting at time t follows: the first hit at or after t, else the throw under way.</summary>
+        public Throw? ThrowFor(float t)
+        {
+            float step = t / take.stepSeconds;
+            foreach (var th in throws) if (th.hit && th.end >= step) return th;
+            foreach (var th in throws) if (th.end >= step) return th;
+            return null;
         }
 
         static int FindPart(TakeActor a, string leaf, int fallback)
@@ -58,7 +112,8 @@ namespace Showcase
         /// <summary>Seconds into the take of a shot's anchor.</summary>
         public float AnchorTime(Shot shot)
         {
-            List<int> steps = shot.anchor == "hit" ? take.hitSteps : shot.anchor == "episode" ? take.episodeStarts : null;
+            List<int> steps = shot.anchor == "hit" ? take.hitSteps : shot.anchor == "episode" ? take.episodeStarts
+                : shot.anchor == "release" ? throws.Where(th => th.hit).Select(th => th.release).ToList() : null;
             if (steps == null) return shot.offset;
             if (steps.Count == 0)
             {
@@ -68,6 +123,73 @@ namespace Showcase
             float anchor = steps[shot.index % steps.Count] * take.stepSeconds;
             return Mathf.Clamp(anchor + shot.offset, 0, Mathf.Max(0, take.Duration - shot.duration));
         }
+    }
+
+    /// <summary>
+    /// A shot's clock: maps seconds of output to seconds of the take. Plays slow around the followed throw's
+    /// release and hit, and with a hold freezes the take on the hit while the impact effect keeps its own clock.
+    /// </summary>
+    public class ShotClock
+    {
+        const float Dt = 1f / 2400f;
+        readonly float[] scene; // take time at each output tick
+        public readonly float start, sceneEnd, duration;
+        public readonly float impactAt = -1f; // output seconds of the frozen hit (-1: no hold)
+        public readonly TakeSubject.Throw? focus;
+        public readonly ISubject subject;   // the take, clamped to the followed throw
+
+        public ShotClock(Shot shot, TakeSubject take)
+        {
+            start = take.AnchorTime(shot);
+            focus = take.ThrowFor(start);
+            float release = -1f, hit = -1f, from = 0f, to = float.MaxValue;
+            if (focus is TakeSubject.Throw th)
+            {
+                release = th.release * take.StepSeconds;
+                if (th.hit) hit = th.end * take.StepSeconds;
+                from = th.start * take.StepSeconds;
+                if (th.hit && shot.hold > 0f) to = hit;
+            }
+            subject = to < float.MaxValue ? new ClampedSubject(take, from, to) : (ISubject)take;
+
+            const float ramp = 0.12f; // seconds of the take to ease into and out of slow motion
+            float Bump(float x, float a, float b) =>
+                x < a ? Mathf.SmoothStep(0, 1, 1f - (a - x) / ramp) : x > b ? Mathf.SmoothStep(0, 1, 1f - (x - b) / ramp) : 1f;
+            float Rate(float x)
+            {
+                float w = 0f;
+                if (release >= 0f && shot.slowRelease > 0f) w = Mathf.Max(w, Bump(x, release - shot.slowRelease, release + shot.slowRelease));
+                if (hit >= 0f && shot.slowHit > 0f) w = Mathf.Max(w, Bump(x, hit - shot.slowHit, hit + 1f));
+                return Mathf.Lerp(1f, Mathf.Clamp(shot.slow, 0.02f, 1f), w);
+            }
+
+            bool holding = hit >= 0f && shot.hold > 0f;
+            var ticks = new List<float>();
+            float tau = 0f, x = start, limit = holding ? 60f : shot.duration;
+            while (tau <= limit + 2f * Dt)
+            {
+                ticks.Add(x);
+                tau += Dt;
+                if (holding && impactAt < 0f && x >= hit) { impactAt = tau; limit = tau + shot.hold; }
+                if (impactAt >= 0f) continue;
+                x += Rate(x) * Dt;
+                if (holding && x > hit) x = hit;
+            }
+            scene = ticks.ToArray();
+            duration = limit;
+            sceneEnd = scene[scene.Length - 1];
+        }
+
+        /// <summary>Take time at output time tau.</summary>
+        public float Scene(float tau)
+        {
+            float i = Mathf.Clamp(tau / Dt, 0, scene.Length - 1);
+            int a = Mathf.FloorToInt(i), b = Mathf.Min(a + 1, scene.Length - 1);
+            return Mathf.Lerp(scene[a], scene[b], i - a);
+        }
+
+        /// <summary>Output seconds since the frozen hit, or -1 before it (or with no hold).</summary>
+        public float Impact(float tau) => impactAt >= 0f && tau >= impactAt ? tau - impactAt : -1f;
     }
 
     /// <summary>
@@ -104,6 +226,7 @@ namespace Showcase
             root.SetParent(parent, false);
             DropNestedBalls(take);
             foreach (var a in take.actors) puppets[a.id] = Build(a);
+            BuildEffects();
         }
 
         /// <summary>
@@ -211,12 +334,126 @@ namespace Showcase
                 j.AddComponent<MeshFilter>().sharedMesh = SmoothMeshes.Sphere;
                 j.AddComponent<MeshRenderer>().sharedMaterial = look.joint;
             }
+            AddKnuckles(a, prefab, parts);
         }
 
-        /// <summary>Poses every actor at take time t; dressings turn to face the viewer.</summary>
-        public void Pose(float t, Vector3? viewer = null)
+        /// <summary>
+        /// A knuckle at the base of every finger and thumb segment, so the hand reads as jointed and the grasp as
+        /// fingers curling, not as boxes changing angle.
+        /// </summary>
+        void AddKnuckles(TakeActor a, GameObject prefab, Transform[] parts)
+        {
+            var frame = a.frames[0];
+            var paths = a.partPaths.ToList();
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string path = a.partPaths[i];
+                string leaf = path.Substring(path.LastIndexOf('/') + 1).ToLowerInvariant();
+                if (!leaf.StartsWith("finger") && !leaf.StartsWith("thumb")) continue;
+                var source = prefab.transform.Find(path);
+                var mesh = source != null && source.TryGetComponent<MeshFilter>(out var mf) ? mf.sharedMesh : null;
+                int parent = path.Contains('/') ? paths.IndexOf(path.Substring(0, path.LastIndexOf('/'))) : -1;
+                if (mesh == null || parent < 0) continue;
+                var b = mesh.bounds;
+                var size = Vector3.Scale(b.size, Abs(frame[i].scale));
+                int axis = size.x >= size.y && size.x >= size.z ? 0 : size.y >= size.z ? 1 : 2;
+                var along = Vector3.zero; along[axis] = b.extents[axis];
+                Vector3 World(int k, Vector3 local) => frame[k].position + frame[k].rotation * Vector3.Scale(local, frame[k].scale);
+                var parentMesh = prefab.transform.Find(a.partPaths[parent])?.GetComponent<MeshFilter>()?.sharedMesh;
+                var parentCenter = World(parent, parentMesh != null ? parentMesh.bounds.center : Vector3.zero);
+                var e0 = b.center - along; var e1 = b.center + along;
+                var knuckle = Vector3.Distance(World(i, e0), parentCenter) < Vector3.Distance(World(i, e1), parentCenter) ? e0 : e1;
+                var sorted = new[] { size.x, size.y, size.z }.OrderBy(v => v).ToArray();
+                float d = 1.25f * sorted[1];
+                var s = Abs(frame[i].scale);
+                var j = new GameObject("Knuckle");
+                j.transform.SetParent(parts[i], false);
+                j.transform.localPosition = knuckle;
+                j.transform.localScale = new Vector3(d / s.x, d / s.y, d / s.z);
+                j.AddComponent<MeshFilter>().sharedMesh = SmoothMeshes.Sphere;
+                j.AddComponent<MeshRenderer>().sharedMaterial = look.joint;
+            }
+        }
+
+        /// <summary>Seconds the impact of a frozen hit plays: glow, pop, shockwave and sparks.</summary>
+        public float impactSeconds = 1.1f;
+
+        LineRenderer trailLine;
+        Transform[] sparks;
+        Vector3[] sparkDirs;
+        float[] sparkSpeeds;
+        float ballRadius = 0.5f, targetRadius = 1f;
+
+        void BuildEffects()
+        {
+            var ballActor = take.actors.FirstOrDefault(a => a.kind == ActorKind.Ball);
+            var targetActor = take.actors.FirstOrDefault(a => a.kind == ActorKind.Target);
+            if (ballActor != null) ballRadius = WorldRadius(look.ballPrefab, ballActor);
+            if (targetActor != null) targetRadius = WorldRadius(look.targetPrefab, targetActor);
+
+            if (look.trail != null)
+            {
+                var go = new GameObject("Trail");
+                go.transform.SetParent(root, false);
+                trailLine = go.AddComponent<LineRenderer>();
+                trailLine.sharedMaterial = look.trail;
+                trailLine.useWorldSpace = true;
+                trailLine.alignment = LineAlignment.View;
+                trailLine.numCapVertices = 6;
+                trailLine.numCornerVertices = 2;
+                trailLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                trailLine.receiveShadows = false;
+                trailLine.widthCurve = new AnimationCurve(new Keyframe(0f, 0f), new Keyframe(0.7f, 0.55f), new Keyframe(1f, 1f));
+                trailLine.widthMultiplier = 1.5f * ballRadius;
+                var g = new Gradient();
+                g.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                          new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.35f, 0.5f), new GradientAlphaKey(1f, 1f) });
+                trailLine.colorGradient = g;
+                trailLine.enabled = false;
+            }
+
+            // Sparks: small glowing beads thrown out of the impact point, slowing and shrinking as they fade.
+            var rng = new System.Random(7);
+            const int count = 28;
+            sparks = new Transform[count];
+            sparkDirs = new Vector3[count];
+            sparkSpeeds = new float[count];
+            var sparkMat = look.spark != null ? look.spark : look.targetHit;
+            for (int i = 0; i < count; i++)
+            {
+                var sp = new GameObject("Spark");
+                sp.transform.SetParent(root, false);
+                sp.AddComponent<MeshFilter>().sharedMesh = SmoothMeshes.Sphere;
+                var r = sp.AddComponent<MeshRenderer>();
+                r.sharedMaterial = sparkMat;
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                sp.SetActive(false);
+                sparks[i] = sp.transform;
+                float z = 2f * (float)rng.NextDouble() - 1f, phi = 2f * Mathf.PI * (float)rng.NextDouble();
+                float rr = Mathf.Sqrt(1f - z * z);
+                sparkDirs[i] = new Vector3(rr * Mathf.Cos(phi), z, rr * Mathf.Sin(phi));
+                sparkSpeeds[i] = 0.6f + 0.8f * (float)rng.NextDouble();
+            }
+        }
+
+        public static float WorldRadius(GameObject prefab, TakeActor a)
+        {
+            var mf = prefab != null ? prefab.GetComponentInChildren<MeshFilter>() : null;
+            var s = a.frames.Count > 0 ? a.frames[0][0].scale : Vector3.one;
+            return (mf != null && mf.sharedMesh != null ? mf.sharedMesh.bounds.extents.x : 0.5f) * Mathf.Abs(s.x);
+        }
+
+        /// <summary>Center distance at which the ball touches the target.</summary>
+        public float ContactDistance => ballRadius + targetRadius;
+
+        /// <summary>
+        /// Poses every actor at take time t; dressings turn to face the viewer.
+        /// impact: seconds since a frozen hit (-1: none). trail: seconds of flight to draw behind the ball of the followed throw.
+        /// </summary>
+        public void Pose(float t, Vector3? viewer = null, float impact = -1f, float trail = 0f, TakeSubject.Throw? focus = null)
         {
             float step = t / take.stepSeconds;
+            Vector3 ballPos = default; bool haveBall = false;
             foreach (var a in take.actors)
             {
                 var p = puppets[a.id];
@@ -230,45 +467,87 @@ namespace Showcase
                     p.parts[i].SetPositionAndRotation(pose.position, pose.rotation);
                     p.parts[i].localScale = pose.scale;
                 }
+                if (a.kind == ActorKind.Ball && a.AliveAt(step)) { ballPos = p.parts[0].position; haveBall = true; }
                 if (p.dressing != null && viewer is Vector3 v)
                 {
                     var toViewer = v - p.dressing.position;
                     if (toViewer.sqrMagnitude > 1e-8f) p.dressing.rotation = Quaternion.FromToRotation(Vector3.up, toViewer.normalized);
                 }
-                if (a.kind == ActorKind.Target && a.hit) Flash(a, p, step, lingering);
+                if (a.kind != ActorKind.Target) continue;
+                if (impact >= 0f) Flash(p, Mathf.Clamp01(impact / impactSeconds), true);
+                else if (a.hit) Flash(p, lingering ? (step - a.LastStep) * take.stepSeconds / hitLinger : 0f, lingering);
             }
+            PoseSparks(impact, haveBall, ballPos, viewer);
+            PoseTrail(step, trail, focus);
+        }
+
+        void PoseSparks(float impact, bool haveBall, Vector3 ballPos, Vector3? viewer)
+        {
+            float k = impact / impactSeconds;
+            bool on = impact >= 0f && k < 1f && haveBall;
+            Vector3 target = ballPos;
+            if (on) foreach (var a in take.actors)
+                if (a.kind == ActorKind.Target && puppets[a.id].go.activeSelf) target = puppets[a.id].parts[0].position;
+            // Out of the contact point, biased back towards where the ball came from and towards the camera.
+            Vector3 contact = on ? target + (ballPos - target).normalized * targetRadius : default;
+            Vector3 bias = on ? (ballPos - target).normalized : default;
+            if (on && viewer is Vector3 v) bias = (bias + 0.5f * (v - contact).normalized).normalized;
+            for (int i = 0; i < sparks.Length; i++)
+            {
+                var sp = sparks[i];
+                if (sp.gameObject.activeSelf != on) sp.gameObject.SetActive(on);
+                if (!on) continue;
+                var dir = (sparkDirs[i] + 0.9f * bias).normalized;
+                float travel = sparkSpeeds[i] * 1.6f * targetRadius * (1f - Mathf.Exp(-5f * k));
+                sp.position = contact + dir * travel + Vector3.down * 0.35f * targetRadius * k * k;
+                sp.localScale = Vector3.one * (0.42f * ballRadius * sparkSpeeds[i] * Mathf.Pow(1f - k, 1.5f));
+            }
+        }
+
+        void PoseTrail(float step, float seconds, TakeSubject.Throw? focus)
+        {
+            if (trailLine == null) return;
+            var ball = take.actors.FirstOrDefault(a => a.kind == ActorKind.Ball && a.AliveAt(step));
+            bool on = seconds > 0f && ball != null && focus is TakeSubject.Throw th && step > th.release && step <= th.end + 0.5f;
+            trailLine.enabled = on;
+            if (!on) return;
+            var f = focus.Value;
+            float head = Mathf.Min(step, f.end), tail = Mathf.Max(f.release, head - seconds / take.stepSeconds);
+            const int n = 64;
+            trailLine.positionCount = n;
+            for (int i = 0; i < n; i++)
+                trailLine.SetPosition(i, ball.Sample(0, Mathf.Lerp(tail, head, i / (n - 1f))).position);
         }
 
         /// <summary>
         /// The hit: the target glows from within and pops, and a shell expands out of it and fades,
-        /// so the moment reads in a still and in motion without blowing out to white.
+        /// so the moment reads in a still and in motion without blowing out to white. k runs 0 to 1 across it.
         /// </summary>
-        void Flash(TakeActor a, Puppet p, float step, bool lingering)
+        void Flash(Puppet p, float k, bool active)
         {
-            float k = lingering ? (step - a.LastStep) * take.stepSeconds / hitLinger : 0f;
-            float glow = lingering ? Mathf.Exp(-4f * k) : 0f;
+            float glow = active ? Mathf.Exp(-4f * k) : 0f;
             var hitGlow = look.targetHit.GetColor(EmissionColor);
             foreach (var r in p.glow)
             {
                 var mats = r.sharedMaterials;
                 for (int m = 0; m < mats.Length; m++)
                 {
-                    if (!lingering) { r.SetPropertyBlock(null, m); continue; }
+                    if (!active) { r.SetPropertyBlock(null, m); continue; }
                     block.Clear();
                     var e = mats[m].IsKeywordEnabled("_EMISSION") ? mats[m].GetColor(EmissionColor) : Color.black;
                     block.SetColor(EmissionColor, Color.Lerp(e, hitGlow, glow));
                     r.SetPropertyBlock(block, m);
                 }
             }
-            if (lingering)
+            if (active)
                 foreach (var part in p.parts) part.localScale *= 1f + 0.12f * Mathf.Sin(Mathf.PI * Mathf.Min(1f, 2.5f * k));
 
             float grow = 1f - Mathf.Pow(1f - k, 3f); // fast out, settling
             float fade = Mathf.Pow(1f - k, 2f);
             foreach (var shell in p.shells)
             {
-                shell.enabled = lingering;
-                if (!lingering) continue;
+                shell.enabled = active && k < 1f;
+                if (!shell.enabled) continue;
                 shell.transform.localScale = Vector3.one * (1f + 1.6f * grow);
                 var c = look.targetHit.GetColor(BaseColor); c.a *= fade * 0.6f;
                 block.Clear();

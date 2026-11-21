@@ -1,0 +1,17 @@
+{
+  "width": 3840,
+  "height": 2160,
+  "fps": 60,
+  "subframes": 16,
+  "shutter": 0.5,
+  "shots": [
+    {"name": "m01", "type": "Wide", "anchor": "release", "index": 0, "offset": -0.9, "fov": 28, "aperture": 8.0, "height": 8, "azimuth": -14, "sweep": 6, "slow": 0.4, "slowHit": 0.12, "hold": 0.6, "trail": 0.5},
+    {"name": "m02", "type": "Follow", "anchor": "release", "index": 7, "offset": -0.2, "fov": 34, "aperture": 4.0, "height": 5, "azimuth": 22, "slow": 0.35, "slowHit": 0.12, "hold": 0.6, "trail": 0.6},
+    {"name": "m03", "type": "Impact", "anchor": "hit", "index": 11, "offset": -0.7, "fov": 30, "aperture": 2.8, "height": 6, "azimuth": -40, "sweep": 20, "slow": 0.25, "slowHit": 0.2, "hold": 0.8, "trail": 0.6},
+    {"name": "m04", "type": "Wide", "anchor": "release", "index": 13, "offset": -0.9, "fov": 26, "aperture": 8.0, "height": 22, "azimuth": 30, "sweep": -6, "slow": 0.4, "slowHit": 0.12, "hold": 0.6, "trail": 0.5},
+    {"name": "m05", "type": "Follow", "anchor": "release", "index": 17, "offset": -0.2, "fov": 34, "aperture": 4.0, "height": 10, "azimuth": -28, "slow": 0.35, "slowHit": 0.12, "hold": 0.6, "trail": 0.6},
+    {"name": "m06", "type": "Wide", "anchor": "release", "index": 26, "offset": -0.9, "fov": 28, "aperture": 8.0, "height": 6, "azimuth": 58, "sweep": 6, "slow": 0.4, "slowHit": 0.12, "hold": 0.6, "trail": 0.5},
+    {"name": "m07", "type": "Impact", "anchor": "hit", "index": 23, "offset": -0.7, "fov": 30, "aperture": 2.8, "height": 3, "azimuth": 35, "sweep": -20, "slow": 0.25, "slowHit": 0.2, "hold": 0.8, "trail": 0.6},
+    {"name": "m08", "type": "Wide", "anchor": "release", "index": 31, "offset": -0.9, "fov": 26, "aperture": 8.0, "height": 14, "azimuth": -20, "sweep": 10, "slow": 0.3, "slowHit": 0.2, "hold": 1.4, "trail": 0.5}
+  ]
+}

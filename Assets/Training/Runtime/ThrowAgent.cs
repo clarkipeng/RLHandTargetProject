@@ -44,6 +44,10 @@ namespace Training
         GameObject target;
         Collider pedestal;
         Vector3 targetPos;   // arena-local
+        // Showcase only (never set in training): target_motion > 0 sways the target sideways by that many units,
+        // over target_period seconds, from a per-episode phase. The policy sees the target's current position every step.
+        Vector3 targetBase;
+        float targetMotion, targetPeriod, targetPhase;
         float targetRadius;
 
         float[] action, smoothed;
@@ -179,6 +183,10 @@ namespace Training
             target.transform.position = transform.position + targetPos;
             target.transform.localScale = Vector3.one * targetRadius;
             target.SetActive(lesson >= 2);
+            targetBase = targetPos;
+            targetMotion = p.GetWithDefault("target_motion", 0f);
+            targetPeriod = Mathf.Max(0.5f, p.GetWithDefault("target_period", 6f));
+            targetPhase = R(0f, 2f * Mathf.PI);
 
             steps = graspSteps = heldSteps = liftSteps = noContactSteps = 0;
             everGrasped = everLifted = thrown = hit = false;
@@ -283,7 +291,17 @@ namespace Training
             for (int i = 0; i < smoothed.Length; i++) smoothed[i] += (action[i] - smoothed[i]) * smoothing;
             ApplyDrives();
             steps++;
+            if (targetMotion > 0f) MoveTarget();
             Evaluate();
+        }
+
+        void MoveTarget()
+        {
+            var flat = new Vector3(targetBase.x, 0f, targetBase.z);
+            var side = flat.sqrMagnitude > 1e-4f ? Vector3.Cross(Vector3.up, flat.normalized) : Vector3.forward;
+            float w = 2f * Mathf.PI * steps * Time.fixedDeltaTime / targetPeriod + targetPhase;
+            targetPos = targetBase + side * (targetMotion * Mathf.Sin(w)) + Vector3.up * (0.3f * targetMotion * Mathf.Sin(2f * w));
+            target.transform.position = transform.position + targetPos;
         }
 
         // Runs every physics step, on the state left by the previous step.

@@ -24,7 +24,7 @@ namespace Showcase
         public float aperture;      // f-stop for the bokeh
     }
 
-    public enum ShotType { Wide, Orbit, Close, Follow }
+    public enum ShotType { Wide, Orbit, Close, Follow, Impact }
 
     /// <summary>
     /// One camera shot of a reel. Shots are anchored to events in the take (a hit, an episode start)
@@ -34,18 +34,26 @@ namespace Showcase
     public class Shot
     {
         public string name = "";
-        public string type = "Wide";   // Wide | Orbit | Close | Follow (a string: JsonUtility cannot read enum names)
+        public string type = "Wide";   // Wide | Orbit | Close | Follow | Impact (a string: JsonUtility cannot read enum names)
         public ShotType Type => (ShotType)Enum.Parse(typeof(ShotType), type, true);
-        public string anchor = "hit"; // hit | episode | time
+        public string anchor = "hit"; // hit | release | episode | time
         public int index;             // which hit or episode
         public float offset = -3f;    // seconds relative to the anchor
         public float duration = 5f;
         public float fov = 30f;
         public float aperture = 4f;
         public float distance = 1f;   // multiplier on the shot's natural distance
-        public float height = 0f;     // camera elevation, degrees
+        public float height = 0f;     // camera elevation, degrees (positive looks down from above)
         public float azimuth = 0f;    // degrees around the arm, 0 = side-on to the throw
         public float sweep = 0f;      // degrees of orbit across the shot
+
+        // Time: a shot follows one throw, the first whose hit is at or after the shot's start.
+        public float slow = 1f;        // playback rate inside the slow windows (0.2 = five times slower)
+        public float slowRelease = 0f; // seconds of the take, either side of the release, played slow
+        public float slowHit = 0f;     // seconds of the take before the hit played slow
+        public float hold = 0f;        // seconds the frame freezes on the hit while the impact plays out;
+                                       // when set, the shot lasts until the hit plus the hold, not 'duration'
+        public float trail = 0f;       // seconds of the ball's flight drawn as a glowing trail (0: none)
     }
 
     [Serializable]
@@ -57,6 +65,20 @@ namespace Showcase
         public int subframes = 16;    // accumulated renders per output frame (motion blur + antialiasing)
         public float shutter = 0.5f;  // fraction of the frame interval the shutter is open (0.5 = 180 degrees)
         public List<Shot> shots = new List<Shot>();
+    }
+
+    /// <summary>A subject whose time is clamped to [from, to]: camera smoothing never sees past a reset.</summary>
+    public class ClampedSubject : ISubject
+    {
+        readonly ISubject s;
+        readonly float from, to;
+        public ClampedSubject(ISubject s, float from, float to) { this.s = s; this.from = from; this.to = Mathf.Max(from, to); }
+        float C(float t) => Mathf.Clamp(t, from, to);
+        public Vector3 ArmBase(float t) => s.ArmBase(C(t));
+        public Vector3 Hand(float t) => s.Hand(C(t));
+        public bool Ball(float t, out Vector3 p) => s.Ball(C(t), out p);
+        public bool Target(float t, out Vector3 p) => s.Target(C(t), out p);
+        public float ArmLength => s.ArmLength;
     }
 
     public static class ShotEvaluator
@@ -75,7 +97,7 @@ namespace Showcase
             Vector3 side = Vector3.Cross(Vector3.up, throwDir); // camera looks against this axis
 
             float az = shot.azimuth + shot.sweep * (Ease(u) - 0.5f);
-            Quaternion around = Quaternion.AngleAxis(az, Vector3.up) * Quaternion.AngleAxis(-shot.height, throwDir);
+            Quaternion around = Quaternion.AngleAxis(az, Vector3.up) * Quaternion.AngleAxis(shot.height, throwDir);
             Vector3 viewDir = around * side; // from the subject towards the camera
 
             Vector3 lookAt, focus;
@@ -89,6 +111,11 @@ namespace Showcase
                 case ShotType.Orbit:
                     lookAt = Vector3.Lerp(armBase, hand, 0.6f); focus = hand;
                     dist = 2.4f * L * shot.distance;
+                    break;
+                case ShotType.Impact:
+                    // On the target, with room for the ball to fly in from the arm's side.
+                    lookAt = Vector3.Lerp(target, hand, 0.12f); focus = target;
+                    dist = 1.3f * L * shot.distance;
                     break;
                 case ShotType.Follow:
                 {

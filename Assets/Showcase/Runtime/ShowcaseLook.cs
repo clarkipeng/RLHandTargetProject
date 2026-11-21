@@ -32,6 +32,12 @@ namespace Showcase
                  "A child named 'Shell' is the hit shockwave.")]
         public GameObject targetDressing;
 
+        [Header("Effects")]
+        [Tooltip("The glowing trail behind the ball in flight (additive, vertex-colored).")]
+        public Material trail;
+        [Tooltip("Sparks thrown out of a hit; falls back to targetHit.")]
+        public Material spark;
+
         public Material MaterialFor(ActorKind kind, string partPath)
         {
             switch (kind)

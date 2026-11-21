@@ -8,7 +8,7 @@ WIN_ROOT="${WIN_ROOT:-/mnt/c/agentworld/rlhand}"
 mkdir -p "$WIN_ROOT"
 rsync -a --delete \
   --exclude '/Library/' --exclude '/Temp/' --exclude '/Logs/' --exclude '/obj/' --exclude '/UserSettings/' \
-  --exclude '/Builds/' --exclude '/results/' --exclude '/renders/' --exclude '/ml/.venv/' --exclude '/.git/' \
+  --exclude '/Builds/' --exclude '/results/' --exclude '/renders/' --exclude '.venv/' --exclude '/.git/' \
   --exclude '*.csproj' --exclude '*.sln' \
   "$ROOT/" "$WIN_ROOT/"
 wslpath -w "$WIN_ROOT"

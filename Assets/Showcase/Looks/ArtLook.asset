@@ -24,3 +24,5 @@ MonoBehaviour:
   smoothMeshes: 1
   joint: {fileID: 2100000, guid: 38978a769df874678be61c92bc5ce6e5, type: 2}
   targetDressing: {fileID: 9136002750899449681, guid: 70062f6ec7f9d4e2cba763f0139704bd, type: 3}
+  trail: {fileID: 2100000, guid: 45633e434829a2748858210fd0768ba9, type: 2}
+  spark: {fileID: 2100000, guid: e51d3836fd654534bbfc86ed625e684f, type: 2}

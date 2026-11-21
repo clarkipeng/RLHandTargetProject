@@ -47,7 +47,12 @@ namespace Showcase.Editor
             volume.profile = UnityEngine.Object.Instantiate(volume.sharedProfile); // never dirty the asset
             volume.profile.TryGet(out DepthOfField dof);
             ReplayPuppets.DropNestedBalls(take);
-            var subject = new TakeSubject(take);
+            // Hits end their episode before the recorder sees them; find them where the ball touches its target.
+            var ballActor = take.actors.FirstOrDefault(a => a.kind == ActorKind.Ball);
+            var targetActor = take.actors.FirstOrDefault(a => a.kind == ActorKind.Target);
+            float contact = ballActor != null && targetActor != null
+                ? 1.06f * (ReplayPuppets.WorldRadius(look.ballPrefab, ballActor) + ReplayPuppets.WorldRadius(look.targetPrefab, targetActor)) : 0f;
+            var subject = new TakeSubject(take, contact);
 
             var bounds = new Bounds(subject.ArmBase(0), Vector3.zero);
             foreach (var a in take.actors)
@@ -92,36 +97,38 @@ namespace Showcase.Editor
             if (stillsDir != null) Directory.CreateDirectory(stillsDir);
 
             int written = 0;
-            var clock = Stopwatch.StartNew();
+            var wall = Stopwatch.StartNew();
             foreach (var shot in reel.shots)
             {
-                float start = subject.AnchorTime(shot);
-                float end = start + shot.duration;
-                int frames = Mathf.RoundToInt(shot.duration * reel.fps);
-                Debug.Log($"[showcase] shot '{shot.name}' ({shot.Type}) {start:F2}s..{end:F2}s, {frames} frames");
+                var clock = new ShotClock(shot, subject);
+                float start = clock.start, end = clock.sceneEnd;
+                int frames = Mathf.RoundToInt(clock.duration * reel.fps);
+                Debug.Log($"[showcase] shot '{shot.name}' ({shot.Type}) {start:F2}s..{end:F2}s of the take, {frames} frames" +
+                          (clock.impactAt >= 0f ? $", hit frozen at {clock.impactAt:F2}s" : ""));
                 for (int f = 0; f < frames; f++)
                 {
-                    float t = start + f / (float)reel.fps;
+                    float tau = f / (float)reel.fps;
                     float u = f / (float)Mathf.Max(1, frames - 1);
                     frame.Begin();
                     for (int s = 0; s < reel.subframes; s++)
                     {
                         // Sub-frame times spread evenly over the open shutter, centered on the frame time.
-                        float ts = t + ((s + 0.5f) / reel.subframes - 0.5f) * reel.shutter / reel.fps;
-                        var pose = ShotEvaluator.Evaluate(shot, subject, ts, u, start, end);
+                        float taus = tau + ((s + 0.5f) / reel.subframes - 0.5f) * reel.shutter / reel.fps;
+                        float ts = clock.Scene(taus);
+                        var pose = ShotEvaluator.Evaluate(shot, clock.subject, ts, u, start, end);
                         Apply(cam, dof, pose, subject.ArmLength);
-                        puppets.Pose(ts, pose.position);
+                        puppets.Pose(ts, pose.position, clock.Impact(taus), shot.trail, clock.focus);
                         stage.Jitter(s, reel.subframes);
                         frame.AddSubframe(s);
                     }
                     var pixels = frame.Resolve();
                     stream?.Write(pixels, 0, pixels.Length);
-                    if (stillsDir != null && f == frames / 2)
+                    if (stillsDir != null && f == StillFrame(clock, frames, reel.fps))
                         File.WriteAllBytes(Path.Combine(stillsDir, $"{written:D2}_{shot.name}.png"), frame.EncodePng());
                     if (maxFrames > 0 && f + 1 >= maxFrames) break;
                 }
                 written++;
-                Debug.Log($"[showcase] shot '{shot.name}' done, {clock.Elapsed.TotalSeconds:F0}s elapsed");
+                Debug.Log($"[showcase] shot '{shot.name}' done, {wall.Elapsed.TotalSeconds:F0}s elapsed");
             }
 
             if (ffmpeg != null)
@@ -133,6 +140,10 @@ namespace Showcase.Editor
             }
         }
 
+        /// <summary>The still of a shot: a quarter second into its impact when it holds on a hit, else mid-shot.</summary>
+        static int StillFrame(ShotClock clock, int frames, int fps) =>
+            clock.impactAt >= 0f ? Mathf.Min(frames - 1, Mathf.RoundToInt((clock.impactAt + 0.25f) * fps)) : frames / 2;
+
         /// <summary>
         /// Renders one hero still: a single instant (no motion blur) with many sub-frames of
         /// antialiasing, at any resolution.
@@ -142,11 +153,11 @@ namespace Showcase.Editor
             var (look, cam, dof, subject, stage) = Setup(take, lookName);
             using var puppets = new ReplayPuppets(take, look, null);
             using var frame = new FrameAccumulator(width, height, cam);
-            float start = subject.AnchorTime(shot), end = start + shot.duration;
-            float t = Mathf.Lerp(start, end, u);
-            var pose = ShotEvaluator.Evaluate(shot, subject, t, u, start, end);
+            var clock = new ShotClock(shot, subject);
+            float tau = u * clock.duration, t = clock.Scene(tau);
+            var pose = ShotEvaluator.Evaluate(shot, clock.subject, t, u, clock.start, clock.sceneEnd);
             Apply(cam, dof, pose, subject.ArmLength);
-            puppets.Pose(t, pose.position);
+            puppets.Pose(t, pose.position, clock.Impact(tau), shot.trail, clock.focus);
             if (float.TryParse(Arg("-debugAperture", ""), out float ap)) dof.aperture.Override(ap);
             frame.Begin();
             for (int s = 0; s < subframes; s++) { stage.Jitter(s, subframes); frame.AddSubframe(s); }

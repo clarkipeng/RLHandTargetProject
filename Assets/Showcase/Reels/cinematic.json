@@ -1,0 +1,14 @@
+{
+  "width": 3840,
+  "height": 2160,
+  "fps": 60,
+  "subframes": 16,
+  "shutter": 0.5,
+  "shots": [
+    {"name": "wide", "type": "Wide", "anchor": "hit", "index": 4, "offset": -2.4, "fov": 28, "aperture": 8.0, "distance": 1.0, "height": 8, "azimuth": -12, "sweep": 6, "slow": 0.35, "slowHit": 0.15, "hold": 1.0, "trail": 0.5},
+    {"name": "release", "type": "Close", "anchor": "release", "index": 9, "offset": -1.0, "duration": 2.4, "fov": 30, "aperture": 4.0, "distance": 1.0, "height": 14, "azimuth": 35, "sweep": 14, "slow": 0.15, "slowRelease": 0.1, "trail": 0.4},
+    {"name": "follow", "type": "Follow", "anchor": "release", "index": 9, "offset": -0.05, "fov": 34, "aperture": 4.0, "distance": 1.0, "height": 6, "azimuth": -20, "sweep": 0, "slow": 0.2, "slowHit": 0.18, "hold": 1.6, "trail": 0.6},
+    {"name": "impact", "type": "Impact", "anchor": "hit", "index": 15, "offset": -0.9, "fov": 30, "aperture": 2.8, "distance": 1.0, "height": 4, "azimuth": -35, "sweep": 40, "slow": 0.12, "slowHit": 0.3, "hold": 2.0, "trail": 0.6},
+    {"name": "finale", "type": "Wide", "anchor": "hit", "index": 21, "offset": -3.0, "fov": 26, "aperture": 8.0, "distance": 0.85, "height": 18, "azimuth": 26, "sweep": -8, "slow": 0.3, "slowHit": 0.2, "hold": 1.4, "trail": 0.5}
+  ]
+}

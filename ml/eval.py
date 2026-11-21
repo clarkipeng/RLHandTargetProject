@@ -31,6 +31,8 @@ def main():
     ap.add_argument("--take", help="also record a .take of the rollout (forces one arena)")
     ap.add_argument("--seconds", type=float, default=60.0, help="take length")
     ap.add_argument("--port", type=int, default=6100)
+    ap.add_argument("--motion", type=float, default=0.0, help="sway every target sideways by this many units (showcase; never trained)")
+    ap.add_argument("--period", type=float, default=6.0, help="seconds per sway with --motion")
     ap.add_argument("--lesson", type=int, help="with --take: show this curriculum lesson's training targets instead of the held-out set")
     a = ap.parse_args()
 
@@ -54,6 +56,8 @@ def main():
     show_lesson = a.take and a.lesson is not None
     params.set_float_parameter("eval_target", -1.0 if show_lesson else -2.0)
     params.set_float_parameter("lesson", float(a.lesson) if show_lesson else 5.0)
+    params.set_float_parameter("target_motion", a.motion)
+    params.set_float_parameter("target_period", a.period)
     env.reset()
     name = list(env.behavior_specs)[0]
     returns, running = [], {}
