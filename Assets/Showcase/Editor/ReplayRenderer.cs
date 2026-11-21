@@ -195,8 +195,19 @@ namespace Showcase.Editor
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
             string ffmpeg = new[] { "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg" }.FirstOrDefault(File.Exists) ?? "ffmpeg";
             // Readback rows are bottom-up, hence vflip. H.264 High at a low CRF plays everywhere a portfolio page is viewed.
-            string args = $"-y -loglevel error -f rawvideo -pix_fmt rgba -s {reel.width}x{reel.height} -r {reel.fps} -i - " +
+            string args = $"-y -loglevel error -threads 4 -f rawvideo -pix_fmt rgba -s {reel.width}x{reel.height} -r {reel.fps} -i - " +
                           $"-vf vflip -c:v libx264 -preset slow -crf 14 -pix_fmt yuv420p -profile:v high -movflags +faststart \"{path}\"";
+            // On the Windows PC, Unity encodes through the Linux ffmpeg in WSL (tools/win/unity.sh passes -wslFfmpeg).
+            string wslFfmpeg = Arg("-wslFfmpeg", "");
+            if (Application.platform == RuntimePlatform.WindowsEditor && wslFfmpeg != "")
+            {
+                string full = Path.GetFullPath(path);
+                string linuxPath = full.StartsWith(@"\\")   // \\wsl.localhost\<distro>\home\... -> /home/...
+                    ? "/" + string.Join("/", full.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries).Skip(2))
+                    : "/mnt/" + char.ToLowerInvariant(full[0]) + full.Substring(2).Replace('\\', '/');
+                args = "-e " + wslFfmpeg + " " + args.Replace($"\"{path}\"", $"\"{linuxPath}\"");
+                ffmpeg = "wsl.exe";
+            }
             var p = Process.Start(new ProcessStartInfo(ffmpeg, args) { UseShellExecute = false, RedirectStandardInput = true });
             return p ?? throw new Exception("could not start ffmpeg");
         }

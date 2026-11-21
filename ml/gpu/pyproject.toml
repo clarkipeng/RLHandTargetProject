@@ -1,0 +1,28 @@
+[project]
+name = "rlhand-ml"
+version = "0.1.0"
+description = "Headless PPO training for the arm that grasps, throws and hits a target (ML-Agents)."
+requires-python = "==3.10.*"
+dependencies = [
+    "mlagents==0.30.0",
+    "torch==2.7.1",
+    "tensorboard",
+    "matplotlib",
+    "imageio-ffmpeg",
+    "onnx==1.16.2",
+    "onnxruntime==1.12.1",
+    "setuptools<70",
+    "protobuf==3.20.3",
+]
+
+[tool.uv]
+package = false
+override-dependencies = ["torch==2.7.1"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }

@@ -105,6 +105,7 @@ namespace Showcase.Editor
             look.ball = Lit(M + "Ball", Hex("FF5A14"), smoothness: 0.38f);
             // A tinted glass bubble with a faint inner glow; the arm stays readable behind it.
             look.target = Lit(M + "Target", Hex("2FC6D2", 0.22f), smoothness: 0.95f, emission: Hex("19C4CF") * 0.3f, transparent: true);
+            look.prop = Lit(M + "BallStand", Hex("2B2F36"), smoothness: 0.5f, metallic: 0.3f);
             look.targetHit = Lit(M + "TargetHit", Hex("9FF4FA", 0.4f), smoothness: 0.95f, emission: Hex("4FD8E4") * 1.3f, transparent: true);
             EditorUtility.SetDirty(look);
 
@@ -147,6 +148,7 @@ namespace Showcase.Editor
             look.joint = Lit(A + "Joint", Hex("26282C"), smoothness: 0.72f, metallic: 0.8f);
             look.ball = Lit(A + "Ball", Hex("1FC3DC"), smoothness: 0.55f, emission: Hex("1FC3DC") * 0.18f);
             look.target = Lit(A + "Target", Hex("E0402F", 0.2f), smoothness: 0.9f, transparent: true);
+            look.prop = Lit(A + "BallStand", Hex("2A2C30"), smoothness: 0.58f, metallic: 0.65f);
             look.targetHit = Lit(A + "TargetHit", Hex("FFE2A8", 0.55f), smoothness: 0.9f, emission: Hex("FFC468") * 1.7f, transparent: true);
             look.targetDressing = BullseyePrefab(A, look.targetHit);
             EditorUtility.SetDirty(look);

@@ -27,6 +27,9 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 SECONDS_TO_RECORD="${SECONDS_TO_RECORD:-90}"
+# On the Windows PC (WSL), Unity runs through tools/win/unity.sh (Windows editor, path conversion, lock).
+UNITY=tools/unity.sh
+[[ -x tools/win/unity.sh && -d /mnt/c ]] && UNITY=tools/win/unity.sh
 
 # Policies outside Assets/ are copied in so Unity imports them.
 if [[ "$POLICY" != Assets/* ]]; then
@@ -40,30 +43,31 @@ TAKE="$OUT/$NAME.take"
 
 if [[ ! -f "$TAKE" ]]; then
   echo "== record $POLICY -> $TAKE"
-  tools/unity.sh -executeMethod Showcase.Editor.RecordCommand.Run \
+  $UNITY -executeMethod Showcase.Editor.RecordCommand.Run \
     -showcaseTake "$TAKE" -showcaseSeconds "$SECONDS_TO_RECORD" -showcaseModel "$POLICY" -showcasePolicy "$NAME" \
     -logFile "$OUT/record.log"
   grep "\[showcase\] saved" "$OUT/record.log"
 fi
 
 echo "== build showcase assets"
-tools/unity.sh --graphics -quit -executeMethod Showcase.Editor.ShowcaseBuilder.BuildFromCommandLine -logFile "$OUT/build.log"
+grep -qE "^  prop: \{fileID: [1-9]" Assets/Showcase/Looks/MinimalLook.asset ||  # already built (they are kept in git)
+$UNITY --graphics -quit -executeMethod Showcase.Editor.ShowcaseBuilder.BuildFromCommandLine -logFile "$OUT/build.log"
 
 echo "== export for the live view and publish it on the wall"
-tools/unity.sh -executeMethod Showcase.Editor.WebExport.ExportFromCommandLine -take "$TAKE" -out "$OUT/$NAME.web.json" -logFile "$OUT/export.log"
+$UNITY -executeMethod Showcase.Editor.WebExport.ExportFromCommandLine -take "$TAKE" -out "$OUT/$NAME.web.json" -logFile "$OUT/export.log"
 tools/showcase/serve.sh "$OUT/$NAME.web.json"
 
 for LOOK in $LOOKS; do
   DIR="$OUT/$LOOK"
   mkdir -p "$DIR"
   echo "== render $LOOK reel"
-  tools/unity.sh --graphics -executeMethod Showcase.Editor.ReplayRenderer.RenderFromCommandLine \
+  $UNITY --graphics -executeMethod Showcase.Editor.ReplayRenderer.RenderFromCommandLine \
     -take "$TAKE" -look "$LOOK" -reel Assets/Showcase/Reels/website.json -out "$DIR/$NAME.mp4" -stills "$DIR/stills" \
     ${PREVIEW[@]+"${PREVIEW[@]}"} -logFile "$DIR/render.log"
 
   if [[ ${#PREVIEW[@]} -eq 0 ]]; then
     echo "== $LOOK hero still"
-    tools/unity.sh --graphics -executeMethod Showcase.Editor.ReplayRenderer.RenderStillFromCommandLine \
+    $UNITY --graphics -executeMethod Showcase.Editor.ReplayRenderer.RenderStillFromCommandLine \
       -take "$TAKE" -look "$LOOK" -reel Assets/Showcase/Reels/website.json -shot hero -u 0.55 -width 5120 -height 2880 -subframes 128 \
       -out "$DIR/stills/hero_5k.png" -logFile "$DIR/still.log"
   fi

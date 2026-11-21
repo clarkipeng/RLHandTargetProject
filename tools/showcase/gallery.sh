@@ -14,7 +14,7 @@ for DIR in "$OUT"/*/; do
   rm -f "$GALLERY/$LOOK"-*
   for f in "${STILLS[@]}"; do
     name="$(basename "${f%.png}")"
-    ffmpeg -loglevel error -y -i "$f" -vf "scale='min(2560,iw)':-2" -q:v 2 "$GALLERY/$LOOK-$name.jpg"
+    ffmpeg -loglevel error -threads 4 -y -i "$f" -vf "scale='min(2560,iw)':-2" -q:v 2 "$GALLERY/$LOOK-$name.jpg"
   done
 
   # Contact sheet: 3 columns, as many rows as needed, tiles only for stills that exist.
@@ -28,14 +28,14 @@ for DIR in "$OUT"/*/; do
     layout+="$(( (i % cols) * 960 ))_$(( (i / cols) * 540 ))|"
   done
   labels="$(for i in "${!STILLS[@]}"; do printf '[t%d]' "$i"; done)"
-  ffmpeg -loglevel error -y "${inputs[@]}" \
+  ffmpeg -loglevel error -threads 4 -y "${inputs[@]}" \
     -filter_complex "${filter}${labels}xstack=inputs=$n:layout=${layout%|}:fill=0x0d1117" \
     -frames:v 1 -q:v 2 "$GALLERY/$LOOK-sheet.jpg"
   echo "$LOOK: $n stills in a ${cols}x${rows} sheet"
 
   for clip in "$DIR"*.mp4; do
     [[ -e "$clip" ]] || continue
-    ffmpeg -loglevel error -y -i "$clip" -vf scale=1920:-2 -c:v libx264 -preset slow -crf 20 -pix_fmt yuv420p \
+    ffmpeg -loglevel error -threads 4 -y -i "$clip" -vf scale=1920:-2 -c:v libx264 -preset slow -crf 20 -pix_fmt yuv420p \
       -movflags +faststart -an "$GALLERY/$LOOK-reel.mp4"
   done
 done

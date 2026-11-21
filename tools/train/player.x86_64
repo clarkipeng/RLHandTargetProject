@@ -1,0 +1,12 @@
+#!/bin/bash
+# Lets the Linux mlagents-learn launch the Windows training player: converts path arguments and execs the .exe.
+# mlagents-learn finds this file when given --env tools/train/player; the player path comes from $THROW_PLAYER.
+args=()
+prev=""
+for orig in "$@"; do
+  a="$orig"
+  if [[ "$prev" == -logFile && "$a" != /* ]]; then a="$PWD/$a"; fi
+  if [[ "$a" == /* ]]; then mkdir -p "$(dirname "$a")" 2>/dev/null; a="$(wslpath -w "$a")"; fi
+  args+=("$a"); prev="$orig"
+done
+exec "${THROW_PLAYER:?set THROW_PLAYER to the Windows training player (.exe)}" -arenas "${THROW_ARENAS:-8}" "${args[@]}"

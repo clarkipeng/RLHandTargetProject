@@ -24,6 +24,7 @@ namespace Showcase
         readonly Dictionary<int, (TakeActor actor, Transform root, Transform[] parts)> live =
             new Dictionary<int, (TakeActor, Transform, Transform[])>();
         readonly Dictionary<Agent, int> episodesSeen = new Dictionary<Agent, int>();
+        readonly HashSet<int> ballsOnTarget = new HashSet<int>(); // balls whose hitTarget flag was set last sample
         int step;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -76,6 +77,7 @@ namespace Showcase
                 if (ball.transform.parent == null || ball.transform.parent.GetComponentInParent<ProjectileScript>() == null)
                     Track(ball.transform, ActorKind.Ball); // the prefab nests a second ProjectileScript; keep the outermost
             foreach (var target in GameObject.FindGameObjectsWithTag("target")) Track(target.transform, ActorKind.Target);
+            foreach (var prop in FindObjectsOfType<Training.ShowcaseProp>()) Track(prop.transform, ActorKind.Prop); // the ball's pedestal
         }
 
         void Track(Transform root, ActorKind kind)
@@ -113,7 +115,10 @@ namespace Showcase
                 }
                 entry.actor.frames.Add(frame);
 
-                if (entry.actor.kind == ActorKind.Ball && !entry.actor.hit && entry.root.GetComponent<ProjectileScript>().hitTarget)
+                // A hit is the flag's rising edge: training arenas reuse one ball for every episode.
+                bool onTarget = entry.actor.kind == ActorKind.Ball && entry.root.GetComponent<ProjectileScript>().hitTarget;
+                if (!onTarget) ballsOnTarget.Remove(id);
+                else if (ballsOnTarget.Add(id))
                 {
                     entry.actor.hit = true;
                     take.hitSteps.Add(step);

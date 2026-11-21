@@ -120,14 +120,15 @@ namespace Showcase
 
         Puppet Build(TakeActor a)
         {
-            var prefab = a.kind == ActorKind.Arm ? look.armPrefab : a.kind == ActorKind.Ball ? look.ballPrefab : look.targetPrefab;
+            var prefab = a.kind == ActorKind.Arm ? look.armPrefab : a.kind == ActorKind.Ball ? look.ballPrefab : a.kind == ActorKind.Target ? look.targetPrefab : look.ballPrefab;
             var p = new Puppet { go = new GameObject($"{a.kind}_{a.id}"), parts = new Transform[a.partPaths.Length] };
             p.go.transform.SetParent(root, false);
             var renderers = new Renderer[a.partPaths.Length];
             for (int i = 0; i < p.parts.Length; i++)
             {
                 var source = string.IsNullOrEmpty(a.partPaths[i]) ? prefab.transform : prefab.transform.Find(a.partPaths[i]);
-                var original = source != null && source.TryGetComponent<MeshFilter>(out var mf) ? mf.sharedMesh : null;
+                var original = a.kind == ActorKind.Prop ? Resources.GetBuiltinResource<Mesh>("Cube.fbx")
+                    : source != null && source.TryGetComponent<MeshFilter>(out var mf) ? mf.sharedMesh : null;
                 if (original == null) Debug.LogWarning($"[showcase] no mesh for {a.kind} part '{a.partPaths[i]}' in {prefab.name}");
                 var scale = a.frames.Count > 0 ? a.frames[0][i].scale : Vector3.one;
                 var mesh = look.smoothMeshes ? SmoothMeshes.For(original, scale) : original;

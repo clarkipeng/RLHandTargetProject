@@ -1,0 +1,57 @@
+# One curriculum for the whole task: grasp -> lift -> throw -> near -> mid -> far targets.
+# Every lesson pays +1 for its own success on top of a shaping potential worth at most 0.4,
+# so "mean reward above ~1" means "most episodes succeed" in every lesson (see Assets/Training/Runtime/ThrowAgent.cs).
+behaviors:
+  Throw:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 4096
+      buffer_size: 65536
+      learning_rate: 0.0003
+      beta: 0.003
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: constant
+    network_settings:
+      normalize: true
+      hidden_units: 256
+      num_layers: 3
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+    keep_checkpoints: 200
+    checkpoint_interval: 1000000
+    max_steps: 300000000
+    time_horizon: 128
+    summary_freq: 100000
+    threaded: false
+
+environment_parameters:
+  eval_target: -1.0
+  lesson:
+    curriculum:
+      - name: grasp
+        completion_criteria: { measure: reward, behavior: Throw, signal_smoothing: true, min_lesson_length: 2000, threshold: 0.95 }
+        value: 0.0
+      - name: lift
+        completion_criteria: { measure: reward, behavior: Throw, signal_smoothing: true, min_lesson_length: 2000, threshold: 0.95 }
+        value: 1.0
+      - name: throw
+        completion_criteria: { measure: reward, behavior: Throw, signal_smoothing: true, min_lesson_length: 4000, threshold: 1.25 }
+        value: 2.0
+      - name: near
+        completion_criteria: { measure: reward, behavior: Throw, signal_smoothing: true, min_lesson_length: 4000, threshold: 1.2 }
+        value: 3.0
+      - name: mid
+        completion_criteria: { measure: reward, behavior: Throw, signal_smoothing: true, min_lesson_length: 4000, threshold: 1.1 }
+        value: 4.0
+      - name: far
+        value: 5.0
+
+engine_settings:
+  time_scale: 100
+  target_frame_rate: -1
+  capture_frame_rate: 0
+  no_graphics: true
