@@ -34,6 +34,37 @@ From 30M on, every checkpoint scores between 82% and 91% on 240 throws, so the r
 ![art](media/renders/throw09-36M/art/sheet.jpg)
 ![minimal](media/renders/throw09-36M/minimal/sheet.jpg)
 
+### Cinematic throws
+
+Three 4K 60 fps reels per look, rendered offline from recorded takes by `ReplayRenderer` (1080p copies here, the 4K masters stay in `renders/`).
+
+- Cinematic ([art](media/renders/throw09-36M/art/cinematic.mp4), [minimal](media/renders/throw09-36M/minimal/cinematic.mp4)): a wide shot, a close-up of the release, a follow-cam on the ball with a glowing trail, an impact close-up, and a high finale.
+- Montage ([art](media/renders/throw09-36M/art/montage.mp4), [minimal](media/renders/throw09-36M/minimal/montage.mp4)): eight throws at varied held-out targets.
+- Moving targets ([art](media/renders/throw09-36M-moving/art/moving.mp4), [minimal](media/renders/throw09-36M-moving/minimal/moving.mp4)): six throws at targets that sway sideways.
+
+Each shot plays in slow motion around the release and before the hit, then freezes the take on the hit while the impact effect (target glow, a shockwave ring and sparks) keeps playing.
+The recorder catches only a few hits, because a hit ends the episode in the same physics step, so the renderer infers each throw's release and hit from the take itself.
+The inference counts a throw as a hit when the ball ends its episode within contact distance of the target, which on moving targets also admits a few near misses, so reel shots are picked by eye.
+
+![cinematic art](media/renders/throw09-36M/art/cinematic-sheet.jpg)
+![cinematic minimal](media/renders/throw09-36M/minimal/cinematic-sheet.jpg)
+
+### Moving targets
+
+The policy never trained on moving targets.
+`ml/eval.py --motion M --period P` sways every held-out target sideways by ±M units (with a small vertical bob) over P seconds.
+
+| sway (units, 6 s period) | held-out hit rate | throws |
+|---|---|---|
+| 0 | 88% | 96 |
+| ±3 | 79% | 96 |
+| ±6 | 39% | 96 |
+
+The target radius is 4, so the policy holds up to a sway of about the target's radius and falls off beyond it.
+
+![moving targets art](media/renders/throw09-36M-moving/art/moving-sheet.jpg)
+![moving targets minimal](media/renders/throw09-36M-moving/minimal/moving-sheet.jpg)
+
 ## Curriculum
 
 The `lesson` environment parameter in `ml/config/throw.yaml` advances on the mean reward.
@@ -64,6 +95,9 @@ tools/train/watch.sh throw09                  # every 20 min: held-out eval, cha
 uv run --project ml python ml/eval.py ml/results/throw09/Throw/Throw-15999874.onnx --episodes 240
 tools/train/learn.sh out.mp4 "label=policy.onnx[@lesson]" ...
 tools/showcase/render.sh ml/results/throw09/Throw/Throw-15999874.onnx renders/throw09-36M
+REELS="cinematic montage" tools/showcase/render.sh ml/results/throw09/Throw/Throw-15999874.onnx renders/throw09-36M
+uv run --project ml python ml/eval.py ml/results/throw09/Throw/Throw-15999874.onnx --episodes 96 --motion 3
+tools/showcase/gallery.sh renders/throw09-36M   # stills, sheets and 1080p clips of every reel on the wall
 ```
 
 Peak memory while training was about 2.4 GB (1 GB in WSL, 1.4 GB for the Windows players); renders ran only while training was stopped.

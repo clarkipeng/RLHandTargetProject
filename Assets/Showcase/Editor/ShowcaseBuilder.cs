@@ -87,6 +87,8 @@ namespace Showcase.Editor
             look.smoothMeshes = true;
             look.joint = null;
             look.targetDressing = null;
+            look.trail = null;
+            look.spark = null;
             return look;
         }
 
@@ -103,10 +105,16 @@ namespace Showcase.Editor
             // Satin graphite hand: the business end reads darker, and the orange ball pops against it.
             look.handShell = Lit(M + "HandShell", Hex("3C4048"), smoothness: 0.62f, metallic: 0.45f, clearCoat: 0.3f, clearCoatSmoothness: 0.8f);
             look.ball = Lit(M + "Ball", Hex("FF5A14"), smoothness: 0.38f);
-            // A tinted glass bubble with a faint inner glow; the arm stays readable behind it.
-            look.target = Lit(M + "Target", Hex("2FC6D2", 0.22f), smoothness: 0.95f, emission: Hex("19C4CF") * 0.3f, transparent: true);
+            look.target = Lit(M + "Target", Hex("E9E6E0"), smoothness: 0.5f);
             look.prop = Lit(M + "BallStand", Hex("2B2F36"), smoothness: 0.5f, metallic: 0.3f);
-            look.targetHit = Lit(M + "TargetHit", Hex("9FF4FA", 0.4f), smoothness: 0.95f, emission: Hex("4FD8E4") * 1.3f, transparent: true);
+            // Graphite joints at the elbow, wrist and every finger knuckle, so the hand reads as jointed.
+            look.joint = Lit(M + "Joint", Hex("2E3238"), smoothness: 0.66f, metallic: 0.5f);
+            // The hit glows warm, in the ball's family.
+            look.targetHit = Lit(M + "TargetHit", Hex("FFD2B0", 0.5f), smoothness: 0.9f, emission: Hex("FF8A3C") * 1.6f, transparent: true);
+            // A flat ceramic and graphite bullseye that faces the camera, in place of the old glass sphere.
+            look.targetDressing = BullseyePrefab(M, look.targetHit, Hex("3C4048"), Hex("ECE9E3"), Hex("2B2F36"), glowA: 0.05f, glowB: 0.42f);
+            look.trail = Additive(M + "Trail", Hex("FF6A1E") * 3.2f);
+            look.spark = Lit(M + "Spark", Hex("FFB27A"), smoothness: 0.5f, emission: Hex("FF8A3C") * 6f);
             EditorUtility.SetDirty(look);
 
             var profile = BuildVolumeProfile("Minimal", exposure: -0.1f, contrast: 8f, saturation: 4f, bloomThreshold: 1.1f, bloomIntensity: 0.3f,
@@ -119,6 +127,12 @@ namespace Showcase.Editor
                 Lit(M + "Pedestal", Hex("3A3C40"), smoothness: 0.42f, metallic: 0.2f), castShadows: true).transform;
             stage.pedestalRadius = 0.11f;
 
+            // Depth: a light haze that fades the floor into the cove with distance.
+            var env = new GameObject("Environment").transform;
+            env.SetParent(stage.transform, false);
+            stage.environment = env;
+            stage.fogDensityTimesArm = 0.05f;
+
             // Key: high, warm, from the front-left of the throw; a big soft source (8 degrees across).
             var key = DirectionalLight("Key", stage.transform, Hex("FFF1DE"), 3.2f, new Vector3(42f, -35f, 0f), shadows: true, softDegrees: 4f);
             key.shadowStrength = 0.8f;
@@ -130,7 +144,9 @@ namespace Showcase.Editor
             Post(profile);
             MakeCamera(Hex("3A3835"));
             Ambient(Hex("5A606A"), Hex("4A4743"), Hex("2C2A28"));
-            RenderSettings.fog = false;
+            RenderSettings.fogColor = Hex("6E6A66");
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.sun = key;
             EditorSceneManager.SaveScene(scene, ReplayRenderer.ScenePath("Minimal"));
         }
@@ -150,7 +166,9 @@ namespace Showcase.Editor
             look.target = Lit(A + "Target", Hex("E0402F", 0.2f), smoothness: 0.9f, transparent: true);
             look.prop = Lit(A + "BallStand", Hex("2A2C30"), smoothness: 0.58f, metallic: 0.65f);
             look.targetHit = Lit(A + "TargetHit", Hex("FFE2A8", 0.55f), smoothness: 0.9f, emission: Hex("FFC468") * 1.7f, transparent: true);
-            look.targetDressing = BullseyePrefab(A, look.targetHit);
+            look.targetDressing = BullseyePrefab(A, look.targetHit, Hex("D93A2B"), Hex("EEE9DF"), Hex("2A2C30"), glowA: 0.45f, glowB: 0.12f);
+            look.trail = Additive(A + "Trail", Hex("1FC3DC") * 3.5f);
+            look.spark = Lit(A + "Spark", Hex("FFE2A8"), smoothness: 0.5f, emission: Hex("FFC468") * 7f);
             EditorUtility.SetDirty(look);
 
             var fogColor = Hex("171B22");
@@ -220,14 +238,15 @@ namespace Showcase.Editor
         }
 
         /// <summary>
-        /// The art target: a unit-radius bullseye facing +Y (turned to the camera by the replay), a machined rim,
+        /// A unit-radius bullseye facing +Y (turned to the camera by the replay), a machined rim,
         /// and a 'Shell' ring that the replay expands and fades on a hit.
         /// </summary>
-        static GameObject BullseyePrefab(string prefix, Material hit)
+        static GameObject BullseyePrefab(string prefix, Material hit, Color ringA, Color ringB, Color rim, float glowA, float glowB)
         {
-            var red = Lit(prefix + "TargetRed", Hex("D93A2B"), smoothness: 0.55f, emission: Hex("D93A2B") * 0.45f, clearCoat: 0.6f, clearCoatSmoothness: 0.9f);
-            var white = Lit(prefix + "TargetWhite", Hex("EEE9DF"), smoothness: 0.55f, emission: Hex("EEE9DF") * 0.12f, clearCoat: 0.6f, clearCoatSmoothness: 0.9f);
-            var rimMat = Lit(prefix + "TargetRim", Hex("2A2C30"), smoothness: 0.7f, metallic: 0.8f);
+            // A little self-light keeps the face readable whichever way the key falls on it, and lets the hit glow show.
+            var red = Lit(prefix + "TargetRed", ringA, smoothness: 0.55f, emission: ringA * glowA, clearCoat: 0.6f, clearCoatSmoothness: 0.9f);
+            var white = Lit(prefix + "TargetWhite", ringB, smoothness: 0.55f, emission: ringB * glowB, clearCoat: 0.6f, clearCoatSmoothness: 0.9f);
+            var rimMat = Lit(prefix + "TargetRim", rim, smoothness: 0.7f, metallic: 0.8f);
 
             var root = new GameObject("Bullseye");
             var face = MeshObject("Face", root.transform, SaveMesh(BullseyeMesh(5), "Bullseye"), red, castShadows: true);
@@ -235,7 +254,7 @@ namespace Showcase.Editor
             MeshObject("Rim", root.transform, SaveMesh(TorusMesh(1f, 0.045f), "TargetRim"), rimMat, castShadows: true);
             var shell = MeshObject("Shell", root.transform, SaveMesh(TorusMesh(1f, 0.06f), "TargetShell"), hit, castShadows: false);
             shell.GetComponent<MeshRenderer>().enabled = false;
-            string path = "Assets/Showcase/Looks/ArtTarget.prefab";
+            string path = $"Assets/Showcase/Looks/{prefix.TrimEnd('/')}Target.prefab";
             var prefab = PrefabUtility.SaveAsPrefabAsset(root, path);
             UnityEngine.Object.DestroyImmediate(root);
             return prefab;
@@ -277,6 +296,34 @@ namespace Showcase.Editor
             }
             SetTransparent(mat, transparent);
             mat.enableInstancing = true;
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
+        /// <summary>Unlit additive HDR glow that takes the vertex color, for line and trail renderers.</summary>
+        static Material Additive(string name, Color hdr)
+        {
+            var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+            var path = $"{Root}/Materials/{name}.mat";
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null) { mat = new Material(shader); AssetDatabase.CreateAsset(mat, path); }
+            mat.shader = shader;
+            hdr.a = 1f;
+            mat.SetColor("_BaseColor", hdr);
+            mat.SetFloat("_Surface", 1f);
+            mat.SetFloat("_Blend", 2f); // additive
+            mat.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+            mat.SetFloat("_DstBlend", (float)BlendMode.One);
+            mat.SetFloat("_ZWrite", 0f);
+            mat.SetFloat("_Cull", 0f);
+            mat.SetOverrideTag("RenderType", "Transparent");
+            mat.renderQueue = (int)RenderQueue.Transparent + 10;
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            mat.DisableKeyword("_ALPHAMODULATE_ON");
+            mat.SetShaderPassEnabled("DepthOnly", false);
+            mat.SetShaderPassEnabled("ShadowCaster", false);
             EditorUtility.SetDirty(mat);
             return mat;
         }

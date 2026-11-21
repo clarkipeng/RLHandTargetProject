@@ -22,5 +22,7 @@ MonoBehaviour:
   targetHit: {fileID: 2100000, guid: 2326d17f4439f4fdcaaa912b88d2c67a, type: 2}
   prop: {fileID: 2100000, guid: 066fd96c2d24b894086d5785709c9c8b, type: 2}
   smoothMeshes: 1
-  joint: {fileID: 0}
-  targetDressing: {fileID: 0}
+  joint: {fileID: 2100000, guid: 2dbe00dffcd1bbc47a3dd698bf98a244, type: 2}
+  targetDressing: {fileID: 332241957589151058, guid: 2713df6dc179d524791e52a4f1e9995b, type: 3}
+  trail: {fileID: 2100000, guid: 94e26e3c9b226e74c9b87e8a4567bad6, type: 2}
+  spark: {fileID: 2100000, guid: 38ca4222b1fa98e4db4de9921383ea8a, type: 2}

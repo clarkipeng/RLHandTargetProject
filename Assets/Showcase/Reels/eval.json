@@ -5,6 +5,6 @@
   "subframes": 4,
   "shutter": 0.5,
   "shots": [
-    {"name": "eval", "type": "Wide", "anchor": "episode", "index": 1, "offset": 0.0, "duration": 16.0, "fov": 30, "aperture": 8.0, "distance": 0.85, "height": 14, "azimuth": -8, "sweep": 6}
+    {"name": "eval", "type": "Wide", "anchor": "episode", "index": 1, "offset": 0.0, "duration": 16.0, "fov": 30, "aperture": 8.0, "distance": 0.85, "height": -14, "azimuth": -8, "sweep": 6}
   ]
 }
