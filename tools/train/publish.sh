@@ -15,7 +15,7 @@ mkdir -p "$WALL" "$CLIPS"
 cd "$ROOT/ml"
 
 best() { [[ -f "$RES/eval.jsonl" ]] && python3 -c "import json,sys;print(max([json.loads(l)['hit_rate'] for l in open(sys.argv[1])] or [-1]))" "$RES/eval.jsonl" || echo -1; }
-for onnx in $(ls "$RES"/Throw/Throw-*.onnx 2>/dev/null | sort -t- -k2 -n); do
+for onnx in $(ls "$RES"/Throw/Throw-*.onnx 2>/dev/null | sort -V); do
   name="$(basename "$onnx")"
   grep -q "\"$name\"" "$RES/eval.jsonl" 2>/dev/null && continue
   before="$(best)"
