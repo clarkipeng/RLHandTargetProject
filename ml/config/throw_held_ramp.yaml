@@ -1,6 +1,6 @@
 # One curriculum for the whole task: grasp -> lift -> throw -> reach (targets ramp out from 26 to 72).
 # The arm is counterbalanced, torque- and speed-capped (ArmLimits in ThrowAgent.cs) and starts turned towards the targets:
-# ml/probe.py measures that a swing without a backswing carries at most ~54, so the far targets need a wind-up (docs/WINDUP.md).
+# ml/probe.py measures that a swing without a backswing carries at most ~60 (500/250/100 torque, forward start pose), so the far targets need a wind-up (docs/WINDUP.md).
 # throw_held.yaml: throw.yaml with the ball starting in the hand (round 2 of the wind-up, docs/WINDUP.md).
 # The reach lesson's distance ramp runs in the player (ReachRamp in ThrowAgent.cs): +1.5 each time 64 frontier throws hit 60%.
 # Every lesson pays +1 for its own success on top of a shaping potential worth at most 0.4,
