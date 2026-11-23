@@ -12,7 +12,7 @@ behaviors:
       batch_size: 4096
       buffer_size: 65536
       learning_rate: 0.0003
-      beta: 0.003
+      beta: 0.001    # 0.003 kept the action noise near its initial sigma (~0.87 after 9M steps of windup10-11)
       epsilon: 0.2
       lambd: 0.95
       num_epoch: 3
@@ -39,8 +39,8 @@ environment_parameters:
   start_held: 1.0
   held_close: -1.0
   ped_y: -14.5
-  # The ramp only, from 18 out: windup10's throw lesson (anywhere 10-34 out) taught a 16-unit throw, and the ramp's default
-  # start (26) left it at 1% hits for 2M steps. Initialised from windup10 (tools/train/train.sh windup11 --init windup10).
+  # The ramp only, from 18 out, aiming from the first step: windup10's throw lesson (anywhere 10-34 out) taught one 16-unit
+  # throw, and the ramp's default start (26) then left it at 1% hits for 2M steps.
   reach_start: 18.0
   lesson: 3.0
 

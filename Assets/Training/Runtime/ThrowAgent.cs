@@ -113,6 +113,8 @@ namespace Training
         // pressing the ball onto the pedestal's edge, which never became a lift (windup08: 0 lifts in 2.3M steps of lesson 1).
         bool startHeld;
         public const int HoldSetupSteps = 48;     // 0.2 s
+        float[] restAction = new float[0];        // each drive's start-pose action at the last reset (no noise)
+        public const int HoldSettleSteps = 3;     // the first steps of the setup: the ball ignores the hand, the fingers stay open
         // Natural-motion variants (docs/WINDUP.md, round 2); each default leaves training as it was.
         float actionRateCost = 1e-4f;             // action_rate_cost: per decision, times the summed squared change of the drive targets
         float effortCost;                         // effort_cost: per second of held ball, times the mean (shoulder..wrist torque / cap)^2
@@ -222,6 +224,7 @@ namespace Training
 
             action = new float[drives.Count];
             smoothed = new float[drives.Count];
+            restAction = new float[drives.Count];
             if (drives.Count != GetComponent<Unity.MLAgents.Policies.BehaviorParameters>().BrainParameters.ActionSpec.NumContinuousActions)
                 Debug.LogError($"[train] arm has {drives.Count} drives but the behavior expects a different action size");
         }
@@ -305,6 +308,7 @@ namespace Training
                 var (_, _, lo, hi) = drives[i];
                 float rest = lo < 0f && hi > 0f ? 0f : Mathf.Clamp((0f - (lo + hi) / 2f) / ((hi - lo) / 2f), -1f, 1f);
                 if (startPose[i] != 0f) rest = startPose[i];
+                restAction[i] = rest;
                 smoothed[i] = action[i] = Mathf.Clamp(rest + (evalTarget >= 0 || probe ? 0f : Random.Range(-0.05f, 0.05f)), -1f, 1f);
             }
             SetJointPositions(smoothed);
@@ -476,7 +480,10 @@ namespace Training
                 // the arm straight out at once, away from the ball. The probe sends absolute targets.
                 float s = startPose[i];
                 if (poseRelative && !probe && s != 0f) v = v >= 0f ? s + v * (1f - s) : s + v * (1f + s);
-                if (startHeld && !probe && steps <= HoldSetupSteps && driveGroup[i] == ArmLimits.Groups - 1) v = heldClose;
+                // Held start: while the hand closes on the pinned ball the whole arm keeps its start pose. An arm that moved
+                // then dragged the fingers against a ball that cannot move (wrist and finger spikes of 3000-13000 deg/s, and a
+                // third of the balls dropped, in windup11's first evaluation).
+                if (startHeld && !probe && steps <= HoldSetupSteps) v = driveGroup[i] == ArmLimits.Groups - 1 && steps > HoldSettleSteps ? heldClose : restAction[i];
                 jerk += (v - action[i]) * (v - action[i]);
                 action[i] = v;
             }
@@ -549,17 +556,49 @@ namespace Training
             if (steps > HoldSetupSteps + 1) return;
             if (steps <= HoldSetupSteps)
             {
+                // The hand's transforms only catch up with the reset articulation after its first physics step, so the grip
+                // point of step 1 is the last episode's: a ball pinned there jumped across the fingers at step 2 (finger and
+                // wrist joints at 9000-13000 deg/s, fingers bent past their limits, half the balls dropped).
+                // For the first HoldSettleSteps the ball ignores the hand and the fingers stay open. Then the ball is set just
+                // clear of the open hand on its palm side (the grip point of an open hand lies inside it, and contact switched on
+                // there blew the hand apart the same way), pinned in the palm's frame, and the fingers close on it.
+                bool settle = steps <= HoldSettleSteps;
+                var ballCollider = ball.GetComponent<Collider>();
+                foreach (var c in handColliders) Physics.IgnoreCollision(c, ballCollider, settle);
                 for (int i = 0; i < drives.Count; i++)
-                    if (driveGroup[i] == ArmLimits.Groups - 1) action[i] = smoothed[i] = heldClose;
+                    action[i] = smoothed[i] = driveGroup[i] == ArmLimits.Groups - 1 && !settle ? heldClose : restAction[i];
                 ball.collisionDetectionMode = CollisionDetectionMode.Discrete;
                 ball.isKinematic = true;
-                ball.position = Grip;                // transforms follow the articulation from the first step on
+                if (steps == HoldSettleSteps) heldLocal = palm.InverseTransformPoint(ClearOfHand(Grip, ballCollider));
+                ball.position = settle ? Grip : palm.TransformPoint(heldLocal);
                 ball.velocity = ball.angularVelocity = Vector3.zero;
                 return;
             }
             ball.isKinematic = false;
             ball.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             ball.velocity = ball.angularVelocity = Vector3.zero;
+        }
+
+        Vector3 heldLocal;   // held start: the ball's place in the palm's frame while the fingers close
+
+        /// <summary>
+        /// The nearest point to p along the palm's normal (the side that faces down at the start pose, where the pedestal ball
+        /// sits) at which the ball touches none of the hand's colliders.
+        /// </summary>
+        Vector3 ClearOfHand(Vector3 p, Collider ballCollider)
+        {
+            Vector3 n = Vector3.Cross(middleTip.position - palm.position, thumbTip.position - palm.position).normalized;
+            if (Vector3.Dot(n, Vector3.down) < 0f) n = -n;
+            for (int k = 0; k <= 60; k++)
+            {
+                Vector3 q = p + n * (k * 0.05f * ballRadius);
+                bool overlaps = false;
+                foreach (var c in handColliders)
+                    if (Physics.ComputePenetration(ballCollider, q, ball.rotation, c, c.transform.position, c.transform.rotation, out _, out _))
+                    { overlaps = true; break; }
+                if (!overlaps) return q + n * 0.02f * ballRadius;
+            }
+            return p + n * 3f * ballRadius;
         }
 
         void FixedUpdate()
