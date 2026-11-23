@@ -1035,18 +1035,22 @@ namespace Training
     }
 
     /// <summary>
-    /// The distance ramp of the reach lesson, per training player: the reach (the farthest target distance) starts at 26 and
-    /// moves out 1.5 at a time, up to 56, each time the last 64 frontier throws (targets within 4 of the reach) hit at least 60%.
-    /// Half the targets sit in that frontier band, the other half anywhere from 22 out, so near throws stay in practice.
+    /// The distance ramp of the reach lesson, per training player: the reach (the farthest target distance) starts at 26
+    /// (environment parameter reach_start) and moves out 1.5 at a time, up to reach_max, each time the last 64 frontier throws
+    /// (targets within 4 of the reach) hit at least 60%.
+    /// Half the targets sit in that frontier band, the other half anywhere from 22 out (or the start minus 4, if lower),
+    /// so near throws stay in practice.
     /// It never moves back. A resumed run passes its last reach back in with -reachStart (tools/train/train.sh).
     /// </summary>
     public static class ReachRamp
     {
-        public const float Start = 26f, Step = 1.5f, Threshold = 0.6f;
+        public const float Step = 1.5f, Threshold = 0.6f;
         public const int Window = 64;
+        public static float Start = 26f;
         public static float Reach = Start;
         static int episodes, hits;
-        static bool ready;
+        static bool ready, started;
+        static float resumeAt = -1f;
 
         public static void Init()
         {
@@ -1056,11 +1060,21 @@ namespace Training
             int i = System.Array.IndexOf(args, "-reachStart");
             if (i >= 0 && i + 1 < args.Length && float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float,
                     System.Globalization.CultureInfo.InvariantCulture, out float r))
-                Reach = Mathf.Clamp(r, Start, 200f);
+                resumeAt = r;
+            Reach = Mathf.Max(Start, resumeAt);
+        }
+
+        /// <summary>The reach_start parameter; it takes effect only before the ramp has recorded its first throw.</summary>
+        public static void SetStart(float start)
+        {
+            if (started || Mathf.Approximately(start, Start)) return;
+            Start = Mathf.Clamp(start, 10f, 200f);
+            Reach = Mathf.Max(Start, resumeAt);
         }
 
         public static void Record(bool hit)
         {
+            started = true;
             episodes++;
             if (hit) hits++;
             if (episodes < Window) return;

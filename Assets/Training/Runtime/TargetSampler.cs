@@ -14,7 +14,8 @@ namespace Training
     public static class TargetSampler
     {
         public const int FinalLesson = 3;
-        public const float MinDistance = 22f, FrontierWidth = 4f, FrontierShare = 0.5f;
+        public const float FrontierWidth = 4f, FrontierShare = 0.5f;
+        public static float MinDistance = 22f;     // 22, or reach_start - FrontierWidth when the ramp starts nearer
         public static float MaxDistance = 72f;      // environment parameter reach_max: the far end of the distance ramp
         public const float AzimuthSpread = 60f, MinY = -12f, MaxY = 6f, FinalRadius = 4f;
         static readonly float[] HeldOutAzimuths = { -50f, -30f, -10f, 10f, 30f, 50f };
@@ -23,10 +24,12 @@ namespace Training
         static readonly float[] HeldOutHeights = { -8f, -2f, -11f, 4f };
         static readonly float[] DefaultDistances = (float[])HeldOutDistances.Clone(), DefaultHeights = (float[])HeldOutHeights.Clone();
 
-        /// <summary>Environment parameters: reach_max, and heldout_d0..3 / heldout_y0..3 for the held-out distances and heights.</summary>
+        /// <summary>Environment parameters: reach_max, reach_start (ReachRamp), and heldout_d0..3 / heldout_y0..3 for the held-out distances and heights.</summary>
         public static void Configure(Unity.MLAgents.EnvironmentParameters p)
         {
             MaxDistance = p.GetWithDefault("reach_max", 72f);
+            ReachRamp.SetStart(p.GetWithDefault("reach_start", 26f));
+            MinDistance = Mathf.Min(22f, ReachRamp.Start - FrontierWidth);
             for (int k = 0; k < HeldOutDistances.Length; k++)
             {
                 HeldOutDistances[k] = p.GetWithDefault("heldout_d" + k, DefaultDistances[k]);

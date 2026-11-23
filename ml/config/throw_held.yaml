@@ -42,7 +42,7 @@ environment_parameters:
   lesson:
     curriculum:
       - name: throw
-        completion_criteria: { measure: reward, behavior: Throw, signal_smoothing: true, min_lesson_length: 4000, threshold: 1.25 }
+        completion_criteria: { measure: reward, behavior: Throw, signal_smoothing: true, min_lesson_length: 4000, threshold: 1.05 }
         value: 2.0
       - name: reach
         value: 3.0
