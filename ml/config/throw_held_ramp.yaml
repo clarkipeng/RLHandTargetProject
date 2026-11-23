@@ -42,6 +42,8 @@ environment_parameters:
   # The ramp only, from 18 out, aiming from the first step: windup10's throw lesson (anywhere 10-34 out) taught one 16-unit
   # throw, and the ramp's default start (26) then left it at 1% hits for 2M steps.
   reach_start: 18.0
+  # Actions relative to the start pose (the shoulder 45 degrees forward, the fingers closed on the ball): 0 holds it.
+  pose_relative: 1.0
   lesson: 3.0
 
 engine_settings:

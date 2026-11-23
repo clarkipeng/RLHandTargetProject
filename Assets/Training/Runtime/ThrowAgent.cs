@@ -479,6 +479,9 @@ namespace Training
                 // 0 holds the start pose and +-1 still reach the limits. Otherwise a fresh policy (actions near 0) would swing
                 // the arm straight out at once, away from the ball. The probe sends absolute targets.
                 float s = startPose[i];
+                // Held start: the fingers' origin is the closed grip, so a fresh policy (actions near 0) keeps hold of the ball
+                // and +1 still opens the hand fully (windup12's first 1M steps: 0 meant half open, and 77% of balls dropped).
+                if (startHeld && !probe && driveGroup[i] == ArmLimits.Groups - 1) s = heldClose;
                 if (poseRelative && !probe && s != 0f) v = v >= 0f ? s + v * (1f - s) : s + v * (1f + s);
                 // Held start: while the hand closes on the pinned ball the whole arm keeps its start pose. An arm that moved
                 // then dragged the fingers against a ball that cannot move (wrist and finger spikes of 3000-13000 deg/s, and a
