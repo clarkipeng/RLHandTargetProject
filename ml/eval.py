@@ -5,7 +5,11 @@
 Runs the Windows training player with eval_target=-2: every arena cycles through the 24 held-out targets
 (azimuths never used in training), deterministic actions, seeded ball placement.
 A hit pays +1.5 at the end of an episode, everything else at most 0.8, so the episode return tells hits apart.
-Appends one JSON line per checkpoint to results/<run>/eval.jsonl and prints it.
+Appends one JSON line per checkpoint to results/<run>/eval.jsonl (or --out) and prints it: the hit rate overall and per
+held-out distance (25, 33, 42, 52), and per-throw means from the player's [eval] log lines (throw distance, release
+speed, each joint group's share of the release speed, peak joint speed and acceleration, backswing and wind-up time).
+--limits old runs the arm of PR #6 (no torque or speed caps); the default is the capped arm (ArmLimits in ThrowAgent.cs).
+--set k=v sets any other environment parameter (e.g. torque_wrist=100 for a strength sweep).
 With --take, the player also records the rollout for the replay renderer (one arena).
 """
 import argparse, json, os, re, sys, time
@@ -21,6 +25,43 @@ from mlagents_envs.side_channel.engine_configuration_channel import EngineConfig
 HERE = Path(__file__).resolve().parent
 SHIM = HERE.parent / "tools" / "train" / "player"
 HIT_RETURN = 1.2
+GROUPS = ["shoulder", "elbow", "wrist", "fingers"]
+LINE = re.compile(r"\[eval\] target (\d+) hit (\d) grasp (\d) lift (\d) throw (\d) gap (\S+) dist (\S+) thrown (\S+) vrel (\S+) "
+                  r"backswing (\S+) windup (\S+) share (\S+) speed (\S+) accel (\S+) torque (\S+)")
+
+
+def parse_log(path):
+    """One dict per [eval] episode line in the player log."""
+    rows = []
+    for line in open(path, errors="replace"):
+        m = LINE.search(line)
+        if not m: continue
+        g = m.groups()
+        vec = lambda s: [float(x) for x in s.split(",")]
+        rows.append(dict(target=int(g[0]), hit=int(g[1]), grasp=int(g[2]), lift=int(g[3]), throw=int(g[4]), gap=float(g[5]),
+                         dist=float(g[6]), thrown=float(g[7]), vrel=float(g[8]), backswing=float(g[9]), windup=float(g[10]),
+                         share=vec(g[11]), speed=vec(g[12]), accel=vec(g[13]), torque=vec(g[14])))
+    return rows
+
+
+def summarize(rows):
+    """Hit rate per held-out distance, and per-throw means (thrown episodes only) of the throw measurements."""
+    out = {"bands": {}}
+    for d in sorted({r["dist"] for r in rows}):
+        b = [r for r in rows if r["dist"] == d]
+        out["bands"][f"{d:g}"] = {"hit_rate": sum(r["hit"] for r in b) / len(b), "episodes": len(b),
+                                  "thrown": float(np.mean([r["thrown"] for r in b if r["throw"]] or [0]))}
+    if rows:
+        out.update({k + "_rate": sum(r[k] for r in rows) / len(rows) for k in ("grasp", "lift", "throw")})
+    t = [r for r in rows if r["throw"]]
+    if t:
+        mean = lambda k: float(np.mean([r[k] for r in t]))
+        vmean = lambda k: {n: float(np.mean([r[k][i] for r in t])) for i, n in enumerate(GROUPS)}
+        vmax = lambda k: {n: float(np.percentile([r[k][i] for r in t], 90)) for i, n in enumerate(GROUPS)}
+        out.update(throws=len(t), thrown=mean("thrown"), thrown_max=float(max(r["thrown"] for r in t)), release_speed=mean("vrel"),
+                   backswing=mean("backswing"), windup=mean("windup"), share=vmean("share"), peak_speed=vmean("speed"),
+                   peak_accel=vmean("accel"), peak_torque_p90=vmax("torque"))
+    return out
 
 
 def main():
@@ -34,6 +75,10 @@ def main():
     ap.add_argument("--motion", type=float, default=0.0, help="sway every target sideways by this many units (showcase; never trained)")
     ap.add_argument("--period", type=float, default=6.0, help="seconds per sway with --motion")
     ap.add_argument("--lesson", type=int, help="with --take: show this curriculum lesson's training targets instead of the held-out set")
+    ap.add_argument("--limits", choices=["new", "old"], default="new", help="old: the uncapped arm of PR #6")
+    ap.add_argument("--set", action="append", default=[], metavar="K=V", help="any other environment parameter")
+    ap.add_argument("--out", help="append the row here instead of results/<run>/eval.jsonl")
+    ap.add_argument("--tag", help="label stored in the row")
     a = ap.parse_args()
 
     onnx = Path(a.onnx).resolve()
@@ -49,7 +94,8 @@ def main():
         take = Path(a.take).resolve()
         args += ["-showcaseTake", str(take), "-showcaseSeconds", str(a.seconds), "-showcasePolicy", onnx.stem]
     params, engine = EnvironmentParametersChannel(), EngineConfigurationChannel()
-    log = HERE / "results" / "eval_player.log"
+    log = HERE / "results" / f"eval_player_{a.port}.log"
+    if log.exists(): log.unlink()
     env = UnityEnvironment(str(SHIM), base_port=a.port, side_channels=[params, engine], no_graphics=True,
                            additional_args=args + ["-logFile", str(log)], timeout_wait=120)
     engine.set_configuration_parameters(time_scale=20.0 if a.take else 50.0, target_frame_rate=-1, capture_frame_rate=0)
@@ -58,6 +104,10 @@ def main():
     params.set_float_parameter("lesson", float(a.lesson) if show_lesson else 5.0)
     params.set_float_parameter("target_motion", a.motion)
     params.set_float_parameter("target_period", a.period)
+    params.set_float_parameter("arm_limits", 1.0 if a.limits == "new" else 0.0)
+    for kv in a.set:
+        k, v = kv.split("=")
+        params.set_float_parameter(k, float(v))
     env.reset()
     name = list(env.behavior_specs)[0]
     returns, running = [], {}
@@ -90,9 +140,12 @@ def main():
     m = re.search(r"-(\d+)\.onnx$", onnx.name)
     row = {"checkpoint": onnx.name, "step": int(m.group(1)) if m else None, "episodes": len(returns),
            "hits": hits, "hit_rate": hits / len(returns), "mean_return": float(returns.mean()),
-           "seconds": round(time.time() - t0, 1), "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
+           "seconds": round(time.time() - t0, 1), "time": time.strftime("%Y-%m-%dT%H:%M:%S"),
+           "limits": a.limits, "set": a.set, "tag": a.tag}
+    if log.exists():
+        row.update(summarize(parse_log(log)[:want]))
     if not a.take:
-        with open(onnx.parent.parent / "eval.jsonl", "a") as f:
+        with open(Path(a.out) if a.out else onnx.parent.parent / "eval.jsonl", "a") as f:
             f.write(json.dumps(row) + "\n")
     print(json.dumps(row))
 

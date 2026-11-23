@@ -67,6 +67,8 @@ The target radius is 4, so the policy holds up to a sway of about the target's r
 
 ## Curriculum
 
+Since the capped arm, the near/mid/far lessons below are replaced by one `reach` lesson with a distance ramp; see [WINDUP.md](WINDUP.md). This section describes the PR #6 run.
+
 The `lesson` environment parameter in `ml/config/throw.yaml` advances on the mean reward.
 
 1. grasp: hold the ball off the pedestal for 0.3 s.

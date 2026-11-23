@@ -7,34 +7,36 @@ namespace Training
     /// Azimuth is measured in the ground plane from -z, toward +x.
     /// Held-out: azimuths within 3 degrees of the band centres below never appear in training,
     /// and the evaluation set uses exactly those azimuths, at several distances and heights.
+    ///
+    /// Lesson 3 ("reach") is the distance ramp (see ReachRamp): targets out to the current reach, half of them in the
+    /// frontier band just below it and half anywhere from MinDistance up, so near throws keep being practised.
     /// </summary>
     public static class TargetSampler
     {
-        public const int FinalLesson = 5;
+        public const int FinalLesson = 3;
+        public const float MinDistance = 22f, MaxDistance = 56f, FrontierWidth = 4f, FrontierShare = 0.5f;
+        public const float AzimuthSpread = 60f, MinY = -12f, MaxY = 6f, FinalRadius = 4f;
         static readonly float[] HeldOutAzimuths = { -50f, -30f, -10f, 10f, 30f, 50f };
         const float HeldOutHalfWidth = 3f;
+        public static readonly float[] HeldOutDistances = { 25f, 33f, 42f, 52f };
+        static readonly float[] HeldOutHeights = { -8f, -2f, -11f, 4f };
 
-        //                                         azimuth±, dist min, dist max, y min, y max, radius
-        static readonly float[,] Lessons =
-        {
-            { 0f, 0f, 0f, 0f, 0f, 0f },        // 0 grasp (no target)
-            { 0f, 0f, 0f, 0f, 0f, 0f },        // 1 lift (no target)
-            { 0f, 30f, 30f, -15f, -15f, 14f }, // 2 throw: land in a wide zone in front
-            { 15f, 22f, 32f, -10f, -4f, 6f },  // 3 near targets
-            { 35f, 22f, 42f, -12f, 0f, 5f },   // 4 mid
-            { 60f, 22f, 55f, -12f, 6f, 4f },   // 5 far and varied (the final task)
-        };
-
-        public static (Vector3 position, float radius) Sample(int lesson)
+        /// <summary>Lessons 0-2 (grasp, lift, throw into a wide zone near the arm); lesson 3 samples up to <paramref name="reach"/>.</summary>
+        public static (Vector3 position, float radius, bool frontier) Sample(int lesson, float reach)
         {
             lesson = Mathf.Clamp(lesson, 0, FinalLesson);
+            if (lesson < 2) return (Vector3.zero, 1f, false);
+            if (lesson == 2) return (At(0f, 22f, -15f), 12f, false); // land anywhere 10-34 out in front
             float az;
-            do az = Random.Range(-Lessons[lesson, 0], Lessons[lesson, 0]);
-            while (lesson >= 3 && IsHeldOut(az));
-            float d = Random.Range(Lessons[lesson, 1], Lessons[lesson, 2]);
-            float y = Random.Range(Lessons[lesson, 3], Lessons[lesson, 4]);
-            float r = Mathf.Max(Lessons[lesson, 5], 1f);
-            return (At(az, d, y), r);
+            do az = Random.Range(-AzimuthSpread, AzimuthSpread);
+            while (IsHeldOut(az));
+            reach = Mathf.Clamp(reach, MinDistance + FrontierWidth, MaxDistance);
+            bool frontier = reach < MaxDistance && Random.value < FrontierShare;
+            float d = frontier ? Random.Range(reach - FrontierWidth, reach) : Random.Range(MinDistance, reach);
+            float y = Random.Range(MinY, MaxY);
+            // Radius 6 at the first stage narrowing to the final 4 by reach 40.
+            float r = Mathf.Lerp(6f, FinalRadius, Mathf.InverseLerp(MinDistance + FrontierWidth, 40f, reach));
+            return (At(az, d, y), r, frontier);
         }
 
         public static bool IsHeldOut(float azimuth)
@@ -43,17 +45,16 @@ namespace Training
             return false;
         }
 
-        public static int HeldOutCount => HeldOutAzimuths.Length * 4;
+        public static int HeldOutCount => HeldOutAzimuths.Length * HeldOutDistances.Length;
+        public static float HeldOutDistance(int index) => HeldOutDistances[(((index % HeldOutCount) + HeldOutCount) % HeldOutCount) / HeldOutAzimuths.Length];
 
-        /// <summary>The evaluation targets: 6 held-out azimuths x 4 (distance, height) pairs, final-lesson radius.</summary>
+        /// <summary>The evaluation targets: 6 held-out azimuths x 4 (distance, height) pairs, final radius.</summary>
         public static (Vector3 position, float radius) HeldOut(int index)
         {
             index = ((index % HeldOutCount) + HeldOutCount) % HeldOutCount;
             float az = HeldOutAzimuths[index % HeldOutAzimuths.Length];
             int k = index / HeldOutAzimuths.Length;
-            float[] dist = { 25f, 33f, 42f, 52f };
-            float[] height = { -8f, -2f, -11f, 4f };
-            return (At(az, dist[k], height[k]), Lessons[FinalLesson, 5]);
+            return (At(az, HeldOutDistances[k], HeldOutHeights[k]), FinalRadius);
         }
 
         static Vector3 At(float azimuthDeg, float distance, float y)

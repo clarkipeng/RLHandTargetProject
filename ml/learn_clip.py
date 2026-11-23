@@ -19,7 +19,7 @@ def esc(s):
     return s.replace("\\", "\\\\").replace(":", "\\:").replace("'", "’")
 
 
-def segment(clip, web, label, rate, seconds, out):
+def segment(clip, web, label, rate, seconds, out, rate_label="held-out hit rate"):
     j = json.loads(Path(web).read_text())
     t0 = j["episodes"][1] if len(j["episodes"]) > 1 else 0.0
     starts = [e - t0 for e in j["episodes"] if 0 <= e - t0 < seconds]
@@ -35,7 +35,7 @@ def segment(clip, web, label, rate, seconds, out):
     flash = "".join(f",drawbox=x=0:y=0:w=iw:h=ih:color=0xFFC468@0.10:t=fill:enable='between(t,{h:.3f},{h + 0.25:.3f})'" for h in hits)
     vf = (f"trim=0:{seconds},setpts=PTS-STARTPTS,scale=1920:1080,"
           f"drawtext=expansion=none:fontfile={BOLD}:text='{esc(label)}':x=64:y=56:fontsize=40:fontcolor=0xE9E6E0,"
-          f"drawtext=expansion=none:fontfile={FONT}:text='{esc(f'held-out hit rate {rate * 100:.0f}%')}':x=64:y=110:fontsize=30:fontcolor=0xFFC468,"
+          f"drawtext=expansion=none:fontfile={FONT}:text='{esc(f'{rate_label} {rate * 100:.0f}%')}':x=64:y=110:fontsize=30:fontcolor=0xFFC468,"
           + ",".join(draws) + flash + f",fade=t=in:st=0:d=0.4,fade=t=out:st={seconds - 0.4}:d=0.4")
     subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-threads", "4", "-i", clip, "-vf", vf, "-an", "-r", "30",
                     "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", out], check=True)
@@ -47,12 +47,13 @@ def main():
     ap.add_argument("out")
     ap.add_argument("--segment", nargs=4, action="append", metavar=("CLIP", "WEB_JSON", "LABEL", "HIT_RATE"), required=True)
     ap.add_argument("--seconds", type=float, default=9.0)
+    ap.add_argument("--rate-label", default="held-out hit rate", help="text before the hit rate")
     a = ap.parse_args()
     with tempfile.TemporaryDirectory() as tmp:
         parts = []
         for i, (clip, web, label, rate) in enumerate(a.segment):
             p = Path(tmp) / f"{i:02d}.mp4"
-            h, n = segment(clip, web, label, float(rate), a.seconds, str(p))
+            h, n = segment(clip, web, label, float(rate), a.seconds, str(p), a.rate_label)
             print(f"{label}: {h} hits / {n} attempts in {a.seconds:.0f} s")
             parts.append(p)
         lst = Path(tmp) / "list.txt"

@@ -1,0 +1,11 @@
+{
+  "width": 1280,
+  "height": 720,
+  "fps": 30,
+  "subframes": 4,
+  "shutter": 0.5,
+  "shots": [
+    {"name": "windup", "type": "Close", "anchor": "release", "index": 0, "offset": -1.0, "duration": 4.5, "fov": 32, "aperture": 8.0, "distance": 1.1, "height": 8, "azimuth": 0, "sweep": 0, "slow": 0.2, "slowRelease": 0.6, "trail": 0.3},
+    {"name": "flight", "type": "Wide", "anchor": "release", "index": 0, "offset": -0.1, "duration": 3.0, "fov": 30, "aperture": 8.0, "distance": 0.9, "height": 6, "azimuth": 0, "sweep": 0, "slow": 1.0, "hold": 1.0, "trail": 0.5}
+  ]
+}

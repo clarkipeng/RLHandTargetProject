@@ -9,4 +9,5 @@ for orig in "$@"; do
   if [[ "$a" == /* ]]; then mkdir -p "$(dirname "$a")" 2>/dev/null; a="$(wslpath -w "$a")"; fi
   args+=("$a"); prev="$orig"
 done
-exec "${THROW_PLAYER:?set THROW_PLAYER to the Windows training player (.exe)}" -arenas "${THROW_ARENAS:-8}" "${args[@]}"
+# THROW_EXTRA: more player arguments (train.sh passes -reachStart on a resume).
+exec "${THROW_PLAYER:?set THROW_PLAYER to the Windows training player (.exe)}" -arenas "${THROW_ARENAS:-8}" ${THROW_EXTRA:-} "${args[@]}"
