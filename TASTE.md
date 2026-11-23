@@ -6,3 +6,8 @@ Read `~/.agentworld/lab/taste.md` first; this file refines it for this repo.
 - Numbers over impressions: every training claim comes with a hit rate on held-out targets and a clip.
 - Simple, readable training code and configs; one curriculum, documented, not a pile of experiments.
 - Renders are judged as a portfolio piece: clean composition, soft cinematic light, no debug overlays.
+- Run Unity only in batchmode.
+- Train on CUDA.
+- Enforce caps in physics, and verify them by measurement.
+- Arm motion must look natural: shoulder, then elbow, then wrist, with a wind-up.
+- Every showcase clip has a locked camera and a static background.
