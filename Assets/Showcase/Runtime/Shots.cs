@@ -45,7 +45,9 @@ namespace Showcase
         public float distance = 1f;   // multiplier on the shot's natural distance
         public float height = 0f;     // camera elevation, degrees (positive looks down from above)
         public float azimuth = 0f;    // degrees around the arm, 0 = side-on to the throw
-        public float sweep = 0f;      // degrees of orbit across the shot
+        public float sweep = 0f;      // degrees of orbit across the shot (only with move)
+        public bool move = false;     // false (default): a locked camera, framed once on the whole shot, so the background
+                                      // never drifts; true: a deliberate move (the sweep, and framing that follows the action)
 
         // Time: a shot follows one throw, the first whose hit is at or after the shot's start.
         public float slow = 1f;        // playback rate inside the slow windows (0.2 = five times slower)
@@ -87,8 +89,16 @@ namespace Showcase
         public static CameraPose Evaluate(Shot shot, ISubject s, float t, float u, float shotStart, float shotEnd)
         {
             float L = Mathf.Max(s.ArmLength, 0.01f);
-            Vector3 armBase = Smooth(s.ArmBase, t, 0.6f);
-            Vector3 hand = Smooth(s.Hand, t, 0.25f);
+            // Locked: evaluate once, at the shot's middle, on positions averaged over the whole shot; the pose is then the
+            // same on every frame of the shot.
+            float wArm = 0.6f, wHand = 0.25f, wBall = 0.35f;
+            if (!shot.move && shotEnd > shotStart)
+            {
+                t = 0.5f * (shotStart + shotEnd); u = 0.5f;
+                wArm = wHand = wBall = Mathf.Max(0.6f, 0.5f * (shotEnd - shotStart));
+            }
+            Vector3 armBase = Smooth(s.ArmBase, t, wArm, 17);
+            Vector3 hand = Smooth(s.Hand, t, wHand, 17);
             Vector3 target = StableTarget(s, t, shotStart, shotEnd, armBase + Vector3.right * 3f * L);
 
             // The throw line, flattened: cameras are placed relative to it so every shot reads left to right.
@@ -96,7 +106,7 @@ namespace Showcase
             throwDir = throwDir.sqrMagnitude > 1e-6f ? throwDir.normalized : Vector3.right;
             Vector3 side = Vector3.Cross(Vector3.up, throwDir); // camera looks against this axis
 
-            float az = shot.azimuth + shot.sweep * (Ease(u) - 0.5f);
+            float az = shot.azimuth + (shot.move ? shot.sweep * (Ease(u) - 0.5f) : 0f);
             Quaternion around = Quaternion.AngleAxis(az, Vector3.up) * Quaternion.AngleAxis(shot.height, throwDir);
             Vector3 viewDir = around * side; // from the subject towards the camera
 
@@ -119,7 +129,7 @@ namespace Showcase
                     break;
                 case ShotType.Follow:
                 {
-                    Vector3 subject = Smooth(t2 => s.Ball(t2, out var b) ? b : s.Hand(t2), t, 0.35f);
+                    Vector3 subject = Smooth(t2 => s.Ball(t2, out var b) ? b : s.Hand(t2), t, wBall, 17);
                     lookAt = Vector3.Lerp(subject, target, 0.25f); focus = subject;
                     dist = 2.2f * L * shot.distance;
                     break;
