@@ -113,6 +113,10 @@ namespace Training
         // pressing the ball onto the pedestal's edge, which never became a lift (windup08: 0 lifts in 2.3M steps of lesson 1).
         bool startHeld;
         public const int HoldSetupSteps = 48;     // 0.2 s
+        // Natural-motion variants (docs/WINDUP.md, round 2); each default leaves training as it was.
+        float actionRateCost = 1e-4f;             // action_rate_cost: per decision, times the summed squared change of the drive targets
+        float effortCost;                         // effort_cost: per second of held ball, times the mean (shoulder..wrist torque / cap)^2
+        float sequenceBonus;                      // sequence_bonus: at release, times the share of proximal-to-distal peak orderings
         float heldClose = -1f;                    // held_close: finger and thumb targets while the hand closes (-1: their lower limit)
         // Probe (probe = 1): the ball starts fixed in the hand (no grasp), the hand ignores it, nothing is released;
         // every step records how far a release at that instant would carry (drag-free flight). The actions come from
@@ -267,6 +271,10 @@ namespace Training
             touchShaping = p.GetWithDefault("touch_shaping", 0.06f);
             startHeld = p.GetWithDefault("start_held", 0f) > 0.5f;
             heldClose = Mathf.Clamp(p.GetWithDefault("held_close", -1f), -1f, 1f);
+            actionRateCost = p.GetWithDefault("action_rate_cost", 1e-4f);
+            effortCost = p.GetWithDefault("effort_cost", 0f);
+            sequenceBonus = p.GetWithDefault("sequence_bonus", 0f);
+            smoothing = Mathf.Clamp(p.GetWithDefault("action_smoothing", 0.25f), 0.01f, 1f); // per physics step: 0.25 ~ 13 ms, 0.05 ~ 80 ms
             windupBonus = p.GetWithDefault("windup_bonus", 0f);
             windupBonusEnd = p.GetWithDefault("windup_bonus_end", 60f);
             probe = p.GetWithDefault("probe", 0f) > 0.5f;
@@ -472,7 +480,7 @@ namespace Training
                 jerk += (v - action[i]) * (v - action[i]);
                 action[i] = v;
             }
-            AddReward(-0.0001f * jerk);
+            AddReward(-actionRateCost * jerk);
         }
 
         /// <summary>Actions are relative to the rest pose: 0 holds the joint at rest (0 degrees), +1 and -1 reach its limits.</summary>
@@ -595,6 +603,18 @@ namespace Training
             liftSteps = lifted ? liftSteps + 1 : Mathf.Max(0, liftSteps - 3);
             if (liftSteps >= 24) everLifted = true;   // 0.1 s off the pedestal, held
 
+            if (!thrown && effortCost > 0f)
+            {
+                // Effort: squared torque as a fraction of each arm joint's cap, the fingers excepted (they only hold the ball).
+                float e = 0f; int n2 = 0;
+                for (int i = 0; i < drives.Count; i++)
+                {
+                    if (driveGroup[i] >= ArmLimits.Groups - 1 || torqueCap[i] <= 0f) continue;
+                    float f = JointValue(drives[i].body.driveForce, drives[i].body, drives[i].axis) / torqueCap[i];
+                    e += f * f; n2++;
+                }
+                if (n2 > 0) AddReward(-effortCost * e / n2 * Time.fixedDeltaTime);
+            }
             if (!thrown)
             {
                 // Shaping potential, frozen once the ball is thrown (letting go must not cost reward).
@@ -618,6 +638,14 @@ namespace Training
                         AddReward(bonus);
                         Academy.Instance.StatsRecorder.Add("Task/WindupBonus", bonus);
                         Academy.Instance.StatsRecorder.Add("Task/WindupBonusScale", windupBonus * anneal);
+                    }
+                    if (sequenceBonus > 0f && evalTarget < 0 && lesson >= 2 && forwardSwing > 20f)
+                    {
+                        // Proximal to distal: the shoulder's peak speed before the elbow's, the elbow's before the wrist's
+                        // (and the shoulder's before the wrist's), as in a human throw. Only for a real forward swing.
+                        int ordered = (peakStep[0] <= peakStep[1] ? 1 : 0) + (peakStep[1] <= peakStep[2] ? 1 : 0) + (peakStep[0] <= peakStep[2] ? 1 : 0);
+                        AddReward(sequenceBonus * ordered / 3f);
+                        Academy.Instance.StatsRecorder.Add("Task/Sequence", ordered / 3f);
                     }
                     if (lesson >= 2)
                     {
