@@ -6,9 +6,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-RUN="${1:?usage: train.sh <run_id> [--build] [--resume | --init <run>] [--envs N] [--arenas N] [--gpu]}"; shift
+RUN="${1:?usage: train.sh <run_id> [--build] [--resume | --init <run>] [--envs N] [--arenas N] [--gpu] [--config throw.yaml] [--base-port 5005]}"; shift
 # Memory: each player is about 110 MB; 12 environments keep the project under about 3 GB.
-BUILD=0; RESUME=(); ENVS=12; ARENAS=8; DEVICE=cpu; PROJECT=()
+BUILD=0; RESUME=(); ENVS=12; ARENAS=8; DEVICE=cpu; PROJECT=(); CONFIG=throw.yaml; PORT=5005
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --build) BUILD=1 ;;
@@ -16,6 +16,8 @@ while [[ $# -gt 0 ]]; do
     --init) RESUME=(--initialize-from "$2"); shift ;;
     --envs) ENVS="$2"; shift ;;
     --arenas) ARENAS="$2"; shift ;;
+    --config) CONFIG="$2"; shift ;;          # another file in ml/config (e.g. throw_windup_bonus.yaml)
+    --base-port) PORT="$2"; shift ;;         # a second run at the same time needs its own ports
     --gpu) DEVICE=cuda; PROJECT=(--project gpu) ;;   # PyTorch with CUDA from ml/gpu (the RTX 5070 does the policy updates)
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac; shift
@@ -45,7 +47,7 @@ if [[ ${RESUME[0]:-} == --resume ]]; then
 fi
 export THROW_PLAYER="$PLAYER" THROW_ARENAS="$ARENAS" THROW_EXTRA
 cd ml
-nohup nice -n 5 uv run ${PROJECT[@]+"${PROJECT[@]}"} mlagents-learn config/throw.yaml --env ../tools/train/player --num-envs "$ENVS" \
+nohup nice -n 5 uv run ${PROJECT[@]+"${PROJECT[@]}"} mlagents-learn "config/$CONFIG" --base-port "$PORT" --env ../tools/train/player --num-envs "$ENVS" \
   --run-id "$RUN" --results-dir results --torch-device "$DEVICE" ${RESUME[@]+"${RESUME[@]}"} \
   > "results/logs/$RUN.log" 2>&1 &
 echo $! > "results/logs/$RUN.pid"

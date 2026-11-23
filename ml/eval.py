@@ -27,7 +27,8 @@ SHIM = HERE.parent / "tools" / "train" / "player"
 HIT_RETURN = 1.2
 GROUPS = ["shoulder", "elbow", "wrist", "fingers"]
 LINE = re.compile(r"\[eval\] target (\d+) hit (\d) grasp (\d) lift (\d) throw (\d) gap (\S+) dist (\S+) thrown (\S+) vrel (\S+) "
-                  r"backswing (\S+) windup (\S+) share (\S+) speed (\S+) accel (\S+) torque (\S+)")
+                  r"backswing (\S+) windup (\S+) share (\S+) speed (\S+) accel (\S+) torque (\S+)"
+                  r"(?: pkc (\S+) pkp (\S+) pkt (\S+) over (\S+) fwd (\S+))?(?: sspeed (\S+))?(?: wspeed (\S+))?(?: gov (\S+))?")
 
 
 def parse_log(path):
@@ -41,6 +42,14 @@ def parse_log(path):
         rows.append(dict(target=int(g[0]), hit=int(g[1]), grasp=int(g[2]), lift=int(g[3]), throw=int(g[4]), gap=float(g[5]),
                          dist=float(g[6]), thrown=float(g[7]), vrel=float(g[8]), backswing=float(g[9]), windup=float(g[10]),
                          share=vec(g[11]), speed=vec(g[12]), accel=vec(g[13]), torque=vec(g[14])))
+        if g[15] is not None:  # peak context (contact, drive pushing, steps before release), clamped steps, forward swing
+            rows[-1].update(pkc=vec(g[15]), pkp=vec(g[16]), pkt=vec(g[17]), over=vec(g[18]), fwd=float(g[19]))
+        if g[20] is not None:  # peak speed over 1/60 s (the angle covered), next to the one-step peak
+            rows[-1]["sspeed"] = vec(g[20])
+        if g[21] is not None:  # peak speed in the throw: from the backswing's turning point to the release
+            rows[-1]["wspeed"] = vec(g[21])
+        if g[22] is not None:  # physics steps the speed governor held each group
+            rows[-1]["gov"] = vec(g[22])
     return rows
 
 
@@ -60,7 +69,19 @@ def summarize(rows):
         vmax = lambda k: {n: float(np.percentile([r[k][i] for r in t], 90)) for i, n in enumerate(GROUPS)}
         out.update(throws=len(t), thrown=mean("thrown"), thrown_max=float(max(r["thrown"] for r in t)), release_speed=mean("vrel"),
                    backswing=mean("backswing"), windup=mean("windup"), share=vmean("share"), peak_speed=vmean("speed"),
-                   peak_accel=vmean("accel"), peak_torque_p90=vmax("torque"))
+                   peak_accel=vmean("accel"), peak_torque_p90=vmax("torque"),
+                   peak_speed_max={n: float(max(r["speed"][i] for r in t)) for i, n in enumerate(GROUPS)},
+                   backswing_p90=float(np.percentile([r["backswing"] for r in t], 90)))
+        if "pkc" in t[0]:
+            out.update(peak_in_contact=vmean("pkc"), peak_drive_pushing=vmean("pkp"), peak_frames_after_release=vmean("pkt"),
+                       clamped_steps=vmean("over"), forward_swing=mean("fwd"))
+        if "sspeed" in t[0]:
+            if "gov" in t[0]:
+                out["governed_steps"] = vmean("gov")
+            if "wspeed" in t[0]:
+                out.update(throw_peak=vmean("wspeed"), throw_peak_max={n: float(max(r["wspeed"][i] for r in t)) for i, n in enumerate(GROUPS)},
+                           throw_peak_p90=vmax("wspeed"))
+            out.update(peak_sustained=vmean("sspeed"), peak_sustained_max={n: float(max(r["sspeed"][i] for r in t)) for i, n in enumerate(GROUPS)})
     return out
 
 

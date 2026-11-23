@@ -11,7 +11,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const params = new URLSearchParams(location.search);
-const LOOK_MODE = params.get('look') || 'cycle';
+const LOOK_MODE = params.get('look') || 'minimal';   // one static backdrop; ?look=cycle alternates the looks every minute
 const START_AT = parseFloat(params.get('t') || '0'); // seconds into the take, for checking a moment
 const LOOK_SECONDS = 60;
 const POLL_SECONDS = 30;
@@ -93,20 +93,24 @@ function smooth(f, t, half, taps = 9) {
   return sum.multiplyScalar(1 / taps);
 }
 
+// Shots are locked by default (as in Shots.cs): one pose per shot, framed on positions averaged over the shot, so the
+// background never drifts. shot.move = true restores the sweep and the framing that follows the action.
 function evaluateShot(take, shot, t, u, start, end) {
   const L = take.armLength;
-  const armBase = smooth((x, o) => take.armBase(x, o), t, 0.6);
-  const hand = smooth((x, o) => take.hand(x, o), t, 0.25);
+  let wArm = 0.6, wHand = 0.25, wBall = 0.35, wTarget = 0.8;
+  if (!shot.move && end > start) { t = 0.5 * (start + end); u = 0.5; wArm = wHand = wBall = wTarget = Math.max(0.6, 0.5 * (end - start)); }
+  const armBase = smooth((x, o) => take.armBase(x, o), t, wArm, 17);
+  const hand = smooth((x, o) => take.hand(x, o), t, wHand, 17);
   // Live shots are not anchored to a hit, and targets respawn every few seconds: follow the current one,
   // smoothed so the camera pans to a new target instead of cutting.
   const fallback = take.hand(t, new THREE.Vector3());
-  const target = smooth((x, o) => take.target(x, o) ? o : o.copy(fallback), t, 0.8);
+  const target = smooth((x, o) => take.target(x, o) ? o : o.copy(fallback), t, wTarget, 17);
 
   const throwDir = target.clone().sub(armBase); throwDir.y = 0;
   if (throwDir.lengthSq() < 1e-6) throwDir.set(1, 0, 0);
   throwDir.normalize();
   const side = new THREE.Vector3().crossVectors(throwDir, UP).normalize(); // the camera side of the throw
-  const az = THREE.MathUtils.degToRad(shot.azimuth + shot.sweep * (ease(u) - 0.5));
+  const az = THREE.MathUtils.degToRad(shot.azimuth + (shot.move ? shot.sweep * (ease(u) - 0.5) : 0));
   const h = THREE.MathUtils.degToRad(shot.height);
   const horizontal = side.clone().applyAxisAngle(UP, az);
   const viewDir = horizontal.multiplyScalar(Math.cos(h)).addScaledVector(UP, Math.sin(h)).normalize();
@@ -116,7 +120,7 @@ function evaluateShot(take, shot, t, u, start, end) {
     case 'close': lookAt = hand; dist = 1.1 * L; break;
     case 'orbit': lookAt = armBase.clone().lerp(hand, 0.6); dist = 2.4 * L; break;
     case 'follow': {
-      const subject = smooth((x, o) => take.ball(x, o) ? o : take.hand(x, o), t, 0.35);
+      const subject = smooth((x, o) => take.ball(x, o) ? o : take.hand(x, o), t, wBall, 17);
       lookAt = subject.lerp(target, 0.25); dist = 2.2 * L; break;
     }
     default: {
