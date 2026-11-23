@@ -24,11 +24,12 @@ namespace Training
         static readonly float[] HeldOutHeights = { -8f, -2f, -11f, 4f };
         static readonly float[] DefaultDistances = (float[])HeldOutDistances.Clone(), DefaultHeights = (float[])HeldOutHeights.Clone();
 
-        /// <summary>Environment parameters: reach_max, reach_start (ReachRamp), and heldout_d0..3 / heldout_y0..3 for the held-out distances and heights.</summary>
+        /// <summary>Environment parameters: reach_max, reach_start and reach_threshold (ReachRamp), and heldout_d0..3 / heldout_y0..3 for the held-out distances and heights.</summary>
         public static void Configure(Unity.MLAgents.EnvironmentParameters p)
         {
             MaxDistance = p.GetWithDefault("reach_max", 72f);
             ReachRamp.SetStart(p.GetWithDefault("reach_start", 26f));
+            ReachRamp.Threshold = Mathf.Clamp01(p.GetWithDefault("reach_threshold", 0.6f));
             MinDistance = Mathf.Min(22f, ReachRamp.Start - FrontierWidth);
             for (int k = 0; k < HeldOutDistances.Length; k++)
             {

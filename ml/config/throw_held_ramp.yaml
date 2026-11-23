@@ -12,7 +12,7 @@ behaviors:
       batch_size: 4096
       buffer_size: 65536
       learning_rate: 0.0003
-      beta: 0.001    # 0.003 kept the action noise near its initial sigma (~0.87 after 9M steps of windup10-11)
+      beta: 0.0002   # windup13 ran 0.001 to 7M; 0.003 kept the action noise near its initial sigma (~0.87 after 9M steps of windup10-11)
       epsilon: 0.2
       lambd: 0.95
       num_epoch: 3
@@ -44,6 +44,10 @@ environment_parameters:
   reach_start: 18.0
   # Actions relative to the start pose (the shoulder 45 degrees forward, the fingers closed on the ball): 0 holds it.
   pose_relative: 1.0
+  # The ramp advances at 45% frontier hits (default 60%): with the action noise of a fresh policy about a third of the
+  # training throws are let go early, so 60% stalled the ramp (windup13: +0.7 reach per 1M steps) while deterministic
+  # evaluation throws 97% of the time.
+  reach_threshold: 0.45
   lesson: 3.0
 
 engine_settings:

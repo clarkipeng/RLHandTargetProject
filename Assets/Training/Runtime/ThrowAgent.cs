@@ -644,6 +644,8 @@ namespace Training
             bool lifted = grasped && !OnPedestal && BallHeightAboveRest > 2f;
             liftSteps = lifted ? liftSteps + 1 : Mathf.Max(0, liftSteps - 3);
             if (liftSteps >= 24) everLifted = true;   // 0.1 s off the pedestal, held
+            // Held start: the ball starts lifted; letting go at any time after the setup is a throw, however bad.
+            if (startHeld && !probe && steps > HoldSetupSteps) everLifted = everGrasped = true;
 
             if (!thrown && effortCost > 0f)
             {
@@ -1086,7 +1088,8 @@ namespace Training
     /// </summary>
     public static class ReachRamp
     {
-        public const float Step = 1.5f, Threshold = 0.6f;
+        public const float Step = 1.5f;
+        public static float Threshold = 0.6f;   // reach_threshold
         public const int Window = 64;
         public static float Start = 26f;
         public static float Reach = Start;
