@@ -1,15 +1,15 @@
 #!/bin/bash
 # A short eval clip of one checkpoint: record a rollout on the held-out targets, replay it in the minimal look.
-#   tools/train/clip.sh <policy.onnx> <out.mp4> [--look minimal] [--seconds 40] [--lesson N (training targets of that lesson; default held-out)]
+#   tools/train/clip.sh <policy.onnx> <out.mp4> [--look minimal] [--seconds 40] [--lesson N (training targets of that lesson; default held-out)] [--target K (only held-out target K)]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ONNX="$(realpath "$1")"; OUT="$(realpath -m "$2")"; shift 2
-LOOK=minimal; SECONDS_REC=40; LESSON=()
-while [[ $# -gt 0 ]]; do case "$1" in --look) LOOK="$2"; shift ;; --seconds) SECONDS_REC="$2"; shift ;; --lesson) LESSON=(--lesson "$2"); shift ;; esac; shift; done
+LOOK=minimal; SECONDS_REC=40; LESSON=(); TARGET=()
+while [[ $# -gt 0 ]]; do case "$1" in --look) LOOK="$2"; shift ;; --seconds) SECONDS_REC="$2"; shift ;; --lesson) LESSON=(--lesson "$2"); shift ;; --target) TARGET=(--set eval_target="$2"); shift ;; esac; shift; done
 TAKE="${OUT%.mp4}.take"
 mkdir -p "$(dirname "$OUT")"
 cd "$ROOT/ml"
-[[ -f "$TAKE" ]] || uv run python eval.py "$ONNX" --take "$TAKE" --seconds "$SECONDS_REC" ${LESSON[@]+"${LESSON[@]}"} --port 6500 2>/dev/null | tail -1
+[[ -f "$TAKE" ]] || uv run python eval.py "$ONNX" --take "$TAKE" --seconds "$SECONDS_REC" ${LESSON[@]+"${LESSON[@]}"} ${TARGET[@]+"${TARGET[@]}"} --port 6500 2>/dev/null | tail -1
 cd "$ROOT"
 # The looks are generated assets kept in git: build them once with the pedestal material, then bring them back
 # from the Windows mirror so the next sync does not undo them.

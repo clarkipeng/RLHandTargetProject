@@ -37,7 +37,13 @@ PY
 then
   mkdir -p "ml/results/$RUN/backup" && cp "ml/results/$RUN/Throw/checkpoint.pt" "ml/results/$RUN/run_logs/training_status.json" "ml/results/$RUN/backup/"
 fi
-export THROW_PLAYER="$PLAYER" THROW_ARENAS="$ARENAS"
+# The distance ramp lives in the players: a resumed run starts them at the reach it had got to.
+THROW_EXTRA=""
+if [[ ${RESUME[0]:-} == --resume ]]; then
+  reach="$(cd ml && uv run python stats.py "results/$RUN" Task/Reach 2>/dev/null | awk 'NR==2{print $NF}')"
+  [[ -n "$reach" ]] && THROW_EXTRA="-reachStart $reach" && echo "resuming at reach $reach"
+fi
+export THROW_PLAYER="$PLAYER" THROW_ARENAS="$ARENAS" THROW_EXTRA
 cd ml
 nohup nice -n 5 uv run ${PROJECT[@]+"${PROJECT[@]}"} mlagents-learn config/throw.yaml --env ../tools/train/player --num-envs "$ENVS" \
   --run-id "$RUN" --results-dir results --torch-device "$DEVICE" ${RESUME[@]+"${RESUME[@]}"} \

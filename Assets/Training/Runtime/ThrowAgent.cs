@@ -10,7 +10,10 @@ namespace Training
     /// <summary>
     /// One arm, one resting ball, one target: reach, grasp, lift, wind up, release, hit.
     /// The curriculum (ml/config/throw.yaml) sets the environment parameter "lesson":
-    ///   0 grasp (hold it off the pedestal), 1 lift, 2 throw toward a wide zone, 3 near targets, 4 mid targets, 5 far and varied targets.
+    ///   0 grasp (hold it off the pedestal), 1 lift, 2 throw into a wide zone near the arm, 3 reach: targets ramp out from 26 to 56
+    ///   in small steps as the hit rate allows (ReachRamp), with near distances still sampled.
+    /// The arm is weak on purpose (ArmLimits): torque and joint-speed caps, the wrist and fingers capped hardest,
+    /// so far targets need a wind-up through the shoulder and elbow rather than a flick.
     /// Every lesson pays +1 for its own success and shares one bounded shaping potential
     /// (reach the ball, hold it, lift it; at most 0.4 per episode), so the reward measure means the same thing in every lesson.
     /// Throws also earn up to 0.5 for how close the ball flew to the target.
@@ -54,6 +57,20 @@ namespace Training
         float smoothing = 0.25f; // per physics step
         int lesson;
         int evalTarget = -1, evalEpisodes;
+
+        // Strength limits (ArmLimits) and the throw measurements reported with every eval episode.
+        int[] driveGroup;                       // ArmLimits group of each drive
+        ArticulationBody[] groupBody;           // shoulder, elbow, wrist: the body each joint moves
+        float[] torqueCap, speedCap;            // per drive; torqueCap <= 0: the uncapped arm of PR #6
+        int[] armDrives;                        // drives of the shoulder and elbow (for the wind-up measure)
+        float[,] armHistory;                    // their positions per physics step since the lift (radians)
+        int historyLength, liftStep;
+        float[,] recentVelocity;                // per drive, the last AccelWindow joint velocities (acceleration over 1/30 s)
+        const int AccelWindow = 8;
+        readonly float[] peakSpeed = new float[ArmLimits.Groups], peakAccel = new float[ArmLimits.Groups], peakTorque = new float[ArmLimits.Groups];
+        readonly float[] share = new float[ArmLimits.Groups], heldShare = new float[ArmLimits.Groups];
+        float heldSpeed, releaseSpeed, backswing, windupTime, targetDistance;
+        bool frontierTarget;
 
         // Episode state
         int steps, graspSteps, heldSteps, liftSteps, noContactSteps;
@@ -130,6 +147,15 @@ namespace Training
 
             target = Instantiate(targetPrefab, root.position, Quaternion.identity, root);
 
+            driveGroup = drives.Select(d => ArmLimits.GroupOf(arm, d.body)).ToArray();
+            groupBody = new[] { 1, 2, 3 }.Select(b => arm.boneToTransform[b].GetComponent<ArticulationBody>()).ToArray();
+            torqueCap = new float[drives.Count];
+            speedCap = new float[drives.Count];
+            armDrives = Enumerable.Range(0, drives.Count).Where(i => driveGroup[i] <= 1).ToArray();
+            armHistory = new float[Mathf.CeilToInt(EpisodeSeconds / Time.fixedDeltaTime) + 2, armDrives.Length];
+            recentVelocity = new float[drives.Count, AccelWindow];
+            ReachRamp.Init();
+
             action = new float[drives.Count];
             smoothed = new float[drives.Count];
             if (drives.Count != GetComponent<Unity.MLAgents.Policies.BehaviorParameters>().BrainParameters.ActionSpec.NumContinuousActions)
@@ -148,6 +174,7 @@ namespace Training
             int e = Mathf.RoundToInt(p.GetWithDefault("eval_target", -1f));
             evalTarget = e == -2 ? (arenaIndex + evalEpisodes++ * arenaCount) % TargetSampler.HeldOutCount : e;
             if (evalTarget >= 0) lesson = TargetSampler.FinalLesson;
+            ArmLimits.Read(p, driveGroup, torqueCap, speedCap);
 
             // Arm: rest pose (straight out), a little noise in the drive targets.
             arm.boneToTransform[0].GetComponent<ArticulationBody>().TeleportRoot(transform.position, Quaternion.identity);
@@ -179,7 +206,10 @@ namespace Training
             if (script) { script.hitTarget = false; script.onHand = script.onArm = false; script.nOnHand = 0; }
             contacts.Clear();
 
-            (targetPos, targetRadius) = evalTarget >= 0 ? TargetSampler.HeldOut(evalTarget) : TargetSampler.Sample(lesson);
+            frontierTarget = false;
+            if (evalTarget >= 0) (targetPos, targetRadius) = TargetSampler.HeldOut(evalTarget);
+            else (targetPos, targetRadius, frontierTarget) = TargetSampler.Sample(lesson, ReachRamp.Reach);
+            targetDistance = new Vector2(targetPos.x, targetPos.z).magnitude;
             target.transform.position = transform.position + targetPos;
             target.transform.localScale = Vector3.one * targetRadius;
             target.SetActive(lesson >= 2);
@@ -192,6 +222,12 @@ namespace Training
             everGrasped = everLifted = thrown = hit = false;
             minGap = float.MaxValue;
             maxThrowDistance = 0f;
+            historyLength = 0; liftStep = -1;
+            System.Array.Clear(peakSpeed, 0, peakSpeed.Length); System.Array.Clear(peakAccel, 0, peakAccel.Length);
+            System.Array.Clear(peakTorque, 0, peakTorque.Length); System.Array.Clear(share, 0, share.Length);
+            System.Array.Clear(heldShare, 0, heldShare.Length);
+            System.Array.Clear(recentVelocity, 0, recentVelocity.Length);
+            heldSpeed = releaseSpeed = backswing = windupTime = 0f;
             potential = Potential();
         }
 
@@ -279,9 +315,19 @@ namespace Training
             {
                 var (body, axis, lo, hi) = drives[i];
                 float t = DriveTarget(smoothed[i], lo, hi);
-                if (axis == 0) { var d = body.xDrive; d.target = t; body.xDrive = d; }
-                else if (axis == 1) { var d = body.yDrive; d.target = t; body.yDrive = d; }
-                else { var d = body.zDrive; d.target = t; body.zDrive = d; }
+                float f = ArmLimits.OldForceLimit;
+                if (torqueCap[i] > 0f)
+                {
+                    // Torque-speed curve: driving a joint further along its motion weakens linearly to nothing at the speed cap;
+                    // braking keeps the full torque.
+                    float v = JointValue(body.jointVelocity, body, axis), err = t * Mathf.Deg2Rad - JointValue(body.jointPosition, body, axis);
+                    f = v * err > 0f ? torqueCap[i] * Mathf.Clamp01(1f - Mathf.Abs(v) / speedCap[i]) : torqueCap[i];
+                    // Past the cap (gravity or the other joints can push it there), hold the current angle: the drive brakes.
+                    if (v * err > 0f && Mathf.Abs(v) > speedCap[i]) { t = JointValue(body.jointPosition, body, axis) * Mathf.Rad2Deg; f = torqueCap[i]; }
+                }
+                if (axis == 0) { var d = body.xDrive; d.target = t; d.forceLimit = f; body.xDrive = d; }
+                else if (axis == 1) { var d = body.yDrive; d.target = t; d.forceLimit = f; body.yDrive = d; }
+                else { var d = body.zDrive; d.target = t; d.forceLimit = f; body.zDrive = d; }
             }
         }
 
@@ -292,6 +338,7 @@ namespace Training
             ApplyDrives();
             steps++;
             if (targetMotion > 0f) MoveTarget();
+            Measure();
             Evaluate();
         }
 
@@ -327,6 +374,7 @@ namespace Training
                 {
                     thrown = true;
                     releasePoint = Local(ball.position);
+                    MeasureRelease();
                     Academy.Instance.StatsRecorder.Add("Task/ReleaseSpeed", ball.velocity.magnitude);
                     if (lesson >= 2)
                     {
@@ -372,6 +420,90 @@ namespace Training
             }
         }
 
+        /// <summary>
+        /// Every physics step until the release: peak joint speed (deg/s), acceleration (deg/s^2, the velocity change over
+        /// 1/30 s, so contact impulses do not dominate it) and drive torque per joint group,
+        /// the shoulder and elbow angles since the lift (for the wind-up), and, while the hand still touches the ball,
+        /// how much of the ball's velocity each joint produces: joint j turning at w_j (relative to its parent) moves the ball
+        /// at w_j x (ball - anchor_j), which is the velocity at the ball of the link it moves minus that of its parent link;
+        /// the share is that velocity along the ball's direction over its speed, so the four shares sum to 1.
+        /// The fingers' share is the ball's own velocity minus the palm's at the ball (finger joints, rolling and slip).
+        /// </summary>
+        void Measure()
+        {
+            if (thrown) return;
+            float dt = Time.fixedDeltaTime;
+            for (int i = 0; i < drives.Count; i++)
+            {
+                var (body, axis, _, _) = drives[i];
+                int g = driveGroup[i];
+                float v = JointValue(body.jointVelocity, body, axis);
+                peakSpeed[g] = Mathf.Max(peakSpeed[g], Mathf.Abs(v) * Mathf.Rad2Deg);
+                int slot = steps % AccelWindow;
+                if (steps > AccelWindow) peakAccel[g] = Mathf.Max(peakAccel[g], Mathf.Abs(v - recentVelocity[i, slot]) / (AccelWindow * dt) * Mathf.Rad2Deg);
+                recentVelocity[i, slot] = v;
+                peakTorque[g] = Mathf.Max(peakTorque[g], Mathf.Abs(JointValue(body.driveForce, body, axis)));
+            }
+            if (everLifted)
+            {
+                if (liftStep < 0) liftStep = steps;
+                if (historyLength < armHistory.GetLength(0))
+                {
+                    for (int k = 0; k < armDrives.Length; k++)
+                    {
+                        var (body, axis, _, _) = drives[armDrives[k]];
+                        armHistory[historyLength, k] = JointValue(body.jointPosition, body, axis);
+                    }
+                    historyLength++;
+                }
+            }
+            if (HandContacts(out _) > 0)
+            {
+                Vector3 vb = ball.velocity;
+                heldSpeed = vb.magnitude;
+                Vector3 dir = heldSpeed > 1e-3f ? vb / heldSpeed : Vector3.zero;
+                // Telescoping: the velocity at the ball's centre of each link minus that of its parent link (the root is fixed).
+                Vector3 inner = Vector3.zero;
+                for (int g = 0; g < 4; g++)
+                {
+                    Vector3 v = g < 3 ? groupBody[g].GetPointVelocity(ball.position) : vb;
+                    heldShare[g] = heldSpeed > 1e-3f ? Vector3.Dot(v - inner, dir) / heldSpeed : 0f;
+                    inner = v;
+                }
+                historyMark = historyLength;
+            }
+        }
+        int historyMark; // history length at the last step the hand touched the ball
+
+        /// <summary>
+        /// At the release (the last step the hand touched the ball): the joint shares, and the wind-up. For each shoulder and
+        /// elbow axis, the swing direction is the sign of its velocity at release; the backswing is how far that axis first
+        /// went the other way from its angle at the lift (degrees), and the wind-up time runs from that turning point to the
+        /// release. Reported for the axis that swings furthest forward.
+        /// </summary>
+        void MeasureRelease()
+        {
+            releaseSpeed = heldSpeed;
+            System.Array.Copy(heldShare, share, share.Length);
+            int end = Mathf.Min(historyMark, historyLength) - 1;
+            backswing = windupTime = 0f;
+            if (end < 2) return;
+            float bestSwing = -1f;
+            for (int k = 0; k < armDrives.Length; k++)
+            {
+                float s = Mathf.Sign(armHistory[end, k] - armHistory[end - 1, k]);
+                int turn = 0;
+                for (int t = 1; t <= end; t++) if (s * armHistory[t, k] < s * armHistory[turn, k]) turn = t;
+                float swing = s * (armHistory[end, k] - armHistory[turn, k]) * Mathf.Rad2Deg;
+                if (swing > bestSwing)
+                {
+                    bestSwing = swing;
+                    backswing = Mathf.Max(0f, s * (armHistory[0, k] - armHistory[turn, k]) * Mathf.Rad2Deg);
+                    windupTime = (end - turn) * Time.fixedDeltaTime;
+                }
+            }
+        }
+
         /// <summary>Closest approach (surface to surface) of a drag-free flight from p with velocity v to the target, until the floor.</summary>
         float PredictedGap(Vector3 p, Vector3 v)
         {
@@ -401,9 +533,30 @@ namespace Training
             stats.Add("Task/Hit", hit ? 1f : 0f);
             stats.Add("Task/Success", success ? 1f : 0f);
             stats.Add("Task/Lesson", lesson);
-            if (thrown) stats.Add("Task/ThrowDistance", maxThrowDistance);
+            if (lesson == TargetSampler.FinalLesson && evalTarget < 0)
+            {
+                stats.Add("Task/Reach", ReachRamp.Reach);
+                stats.Add("Task/TargetDistance", targetDistance);
+                if (frontierTarget) { stats.Add("Task/FrontierHit", hit ? 1f : 0f); ReachRamp.Record(hit); }
+            }
+            if (thrown)
+            {
+                stats.Add("Task/ThrowDistance", maxThrowDistance);
+                stats.Add("Task/Backswing", backswing);
+                stats.Add("Task/WindupTime", windupTime);
+                for (int g = 0; g < ArmLimits.Groups; g++)
+                {
+                    stats.Add($"Task/Share/{ArmLimits.Names[g]}", share[g]);
+                    stats.Add($"Task/PeakSpeed/{ArmLimits.Names[g]}", peakSpeed[g]);
+                }
+            }
             if (evalTarget >= 0)
-                Debug.Log($"[eval] target {evalTarget} hit {(hit ? 1 : 0)} grasp {(everGrasped ? 1 : 0)} lift {(everLifted ? 1 : 0)} throw {(thrown ? 1 : 0)} gap {(thrown ? minGap : -1f):0.00}");
+            {
+                string G(float[] v, string f) => string.Join(",", v.Select(x => x.ToString(f, System.Globalization.CultureInfo.InvariantCulture)));
+                Debug.Log($"[eval] target {evalTarget} hit {(hit ? 1 : 0)} grasp {(everGrasped ? 1 : 0)} lift {(everLifted ? 1 : 0)} throw {(thrown ? 1 : 0)} gap {(thrown ? minGap : -1f):0.00}"
+                    + System.FormattableString.Invariant($" dist {targetDistance:0.0} thrown {maxThrowDistance:0.00} vrel {releaseSpeed:0.00} backswing {backswing:0.0} windup {windupTime:0.000}")
+                    + $" share {G(share, "0.000")} speed {G(peakSpeed, "0")} accel {G(peakAccel, "0")} torque {G(peakTorque, "0")}");
+            }
             if (interrupted) EpisodeInterrupted(); else EndEpisode();
         }
 
@@ -411,6 +564,84 @@ namespace Training
         {
             var a = actionsOut.ContinuousActions;
             for (int i = 0; i < a.Length; i++) a[i] = action != null && i < action.Length ? action[i] : 0f;
+        }
+    }
+
+    /// <summary>
+    /// How strong the arm is. "arm_limits" 1 (the default, what training uses) caps each joint group's drive torque, and its
+    /// speed through a torque-speed curve (ThrowAgent.ApplyDrives): the torque pushing a joint along its motion falls linearly
+    /// to zero at the speed cap, so the joint can only build speed gradually and never past the cap by its own drive.
+    /// 0 restores the arm of PR #6 (force limit 100000, no speed cap), for comparing old policies.
+    /// Torques are in the drive's own units (PR #6's policy peaks at about 12000 shoulder, 6000 elbow, 4000 wrist, 1000 fingers);
+    /// speeds in degrees per second. Any value can be overridden for sweeps: environment parameters torque_wrist, speed_elbow, ...
+    /// (PhysX's own maxJointVelocity is not used: it did not hold joints near the cap.)
+    /// </summary>
+    public static class ArmLimits
+    {
+        public const int Groups = 4;
+        public static readonly string[] Names = { "shoulder", "elbow", "wrist", "fingers" };
+        //                                          shoulder elbow  wrist  fingers
+        // Shoulder and elbow were 4000 and 2000 in a first round (run windup02): a direct swing still threw 65 out, so no wind-up
+        // was needed; at half that, the same direct swing falls short of the far band (mean 47 on targets 52 out).
+        public static readonly float[] Torque =   { 2000f,  1000f,  400f,  150f };
+        public static readonly float[] Speed =    { 540f,   540f,   300f,  600f };
+        public const float OldForceLimit = 100000f;
+
+        public static int GroupOf(SimCharController arm, ArticulationBody body)
+        {
+            for (int b = 1; b <= 3; b++) if (arm.boneToTransform[b] == body.transform) return b - 1;
+            return 3;
+        }
+
+        /// <summary>Per drive: torque cap (0 for the uncapped arm) and speed cap in radians per second.</summary>
+        public static void Read(EnvironmentParameters p, int[] group, float[] torque, float[] speed)
+        {
+            bool on = p.GetWithDefault("arm_limits", 1f) > 0.5f;
+            for (int i = 0; i < group.Length; i++)
+            {
+                string n = Names[group[i]];
+                torque[i] = on ? p.GetWithDefault("torque_" + n, Torque[group[i]]) : 0f;
+                speed[i] = Mathf.Max(1f, p.GetWithDefault("speed_" + n, Speed[group[i]])) * Mathf.Deg2Rad;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The distance ramp of the reach lesson, per training player: the reach (the farthest target distance) starts at 26 and
+    /// moves out 1.5 at a time, up to 56, each time the last 64 frontier throws (targets within 4 of the reach) hit at least 60%.
+    /// Half the targets sit in that frontier band, the other half anywhere from 22 out, so near throws stay in practice.
+    /// It never moves back. A resumed run passes its last reach back in with -reachStart (tools/train/train.sh).
+    /// </summary>
+    public static class ReachRamp
+    {
+        public const float Start = 26f, Step = 1.5f, Threshold = 0.6f;
+        public const int Window = 64;
+        public static float Reach = Start;
+        static int episodes, hits;
+        static bool ready;
+
+        public static void Init()
+        {
+            if (ready) return;
+            ready = true;
+            var args = System.Environment.GetCommandLineArgs();
+            int i = System.Array.IndexOf(args, "-reachStart");
+            if (i >= 0 && i + 1 < args.Length && float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out float r))
+                Reach = Mathf.Clamp(r, Start, TargetSampler.MaxDistance);
+        }
+
+        public static void Record(bool hit)
+        {
+            episodes++;
+            if (hit) hits++;
+            if (episodes < Window) return;
+            if (hits >= Threshold * episodes && Reach < TargetSampler.MaxDistance)
+            {
+                Reach = Mathf.Min(Reach + Step, TargetSampler.MaxDistance);
+                Debug.Log($"[train] reach {Reach:0.0} (frontier hit rate {hits / (float)episodes:0.00})");
+            }
+            episodes = hits = 0;
         }
     }
 }

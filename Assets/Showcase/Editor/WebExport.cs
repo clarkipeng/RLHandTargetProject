@@ -34,6 +34,11 @@ namespace Showcase.Editor
         {
             ReplayPuppets.DropNestedBalls(take);
             var look = AssetDatabase.LoadAssetAtPath<ShowcaseLook>(ReplayRenderer.LookPath("Minimal"));
+            // Hits end their episode before the recorder sees them: infer them as the renderer does (TakeSubject replaces hitSteps).
+            var ballActor = take.actors.FirstOrDefault(a => a.kind == ActorKind.Ball);
+            var targetActor = take.actors.FirstOrDefault(a => a.kind == ActorKind.Target);
+            if (ballActor != null && targetActor != null && take.actors.Any(a => a.kind == ActorKind.Arm))
+                new TakeSubject(take, 1.06f * (ReplayPuppets.WorldRadius(look.ballPrefab, ballActor) + ReplayPuppets.WorldRadius(look.targetPrefab, targetActor)));
             int frames = Mathf.FloorToInt(take.Duration * Hz);
             var sb = new StringBuilder();
             sb.Append("{\"format\":1");
