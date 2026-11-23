@@ -48,6 +48,8 @@ environment_parameters:
   # training throws are let go early, so 60% stalled the ramp (windup13: +0.7 reach per 1M steps) while deterministic
   # evaluation throws 97% of the time.
   reach_threshold: 0.45
+  # The speed clamp leaves room for the gain one physics step adds (passive whip took the wrist to 390 deg/s against 300).
+  speed_predict: 1.0
   lesson: 3.0
 
 engine_settings:

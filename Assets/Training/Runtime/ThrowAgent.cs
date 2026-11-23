@@ -78,7 +78,8 @@ namespace Training
         // Speed caps enforced in physics (speed_enforce, default 1): PhysX's maxJointVelocity on each capped body,
         // backed by a clamp of the joint velocities after every physics step. Measure() reads the raw velocity before
         // the clamp, so a leak through PhysX still shows in the peaks; overCap counts the clamped steps.
-        bool enforceSpeed, governor;
+        bool enforceSpeed, governor, predictiveClamp;
+        readonly float[] clampOut = new float[32];   // each drive's joint velocity (rad/s) as the clamp left it last step
         int driveMode;              // drive_mode 1 (default): velocity servo; 0: PR #8's position drive with the explicit curve
         float servoGain;
         float[] baseStiffness, baseDamping;   // each drive's own gains (SimCharController sets them in Start), read at the first step
@@ -249,6 +250,7 @@ namespace Training
             float enforce = p.GetWithDefault("speed_enforce", 1f);
             enforceSpeed = enforce > 0.5f && torqueCap.Any(t => t > 0f);
             governor = enforce > 1.5f && enforceSpeed;   // speed_enforce 2: the in-step governor too (it costs the PR #8 policy its grasp)
+            predictiveClamp = p.GetWithDefault("speed_predict", 0f) > 0.5f;   // speed_predict 1: the clamp leaves room for the next step's gain
             for (int k = 0; k < dofBodies.Length; k++)
             {
                 float cap = float.MaxValue;
@@ -459,10 +461,20 @@ namespace Training
                     var (b, axis, _, _) = drives[i];
                     if (b != body || torqueCap[i] <= 0f) continue;
                     int idx = DofIndex(b, axis);
-                    if (idx >= v.dofCount || Mathf.Abs(v[idx]) <= speedCap[i]) continue;
-                    v[idx] = Mathf.Sign(v[idx]) * speedCap[i];
-                    overCap[driveGroup[i]]++;
-                    changed = true;
+                    if (idx >= v.dofCount) continue;
+                    // Predictive: PhysX moves the joint with its end-of-step velocity, so a joint clamped to the cap still ran
+                    // past it by whatever one step adds (passive whip from the shoulder: the wrist at up to 393 deg/s against
+                    // 300 in windup13's throws). Leave room for the gain the last step added in the same direction.
+                    float raw = v[idx], s = Mathf.Sign(raw);
+                    float limit = speedCap[i];
+                    if (predictiveClamp && steps > 1) limit = Mathf.Max(0.5f * speedCap[i], speedCap[i] - Mathf.Max(0f, (raw - clampOut[i]) * s));
+                    if (Mathf.Abs(raw) > limit)
+                    {
+                        v[idx] = s * limit;
+                        overCap[driveGroup[i]]++;
+                        changed = true;
+                    }
+                    clampOut[i] = v[idx];
                 }
                 if (changed) body.jointVelocity = v;
             }
