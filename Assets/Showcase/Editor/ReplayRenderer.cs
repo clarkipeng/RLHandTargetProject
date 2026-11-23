@@ -115,7 +115,7 @@ namespace Showcase.Editor
                         // Sub-frame times spread evenly over the open shutter, centered on the frame time.
                         float taus = tau + ((s + 0.5f) / reel.subframes - 0.5f) * reel.shutter / reel.fps;
                         float ts = clock.Scene(taus);
-                        var pose = ShotEvaluator.Evaluate(shot, clock.subject, ts, u, start, end);
+                        var pose = ShotEvaluator.Evaluate(shot, clock.subject, ts, u, start, end, reel.width / (float)reel.height);
                         Apply(cam, dof, pose, subject.ArmLength);
                         puppets.Pose(ts, pose.position, clock.Impact(taus), shot.trail, clock.focus);
                         stage.Jitter(s, reel.subframes);
@@ -155,7 +155,7 @@ namespace Showcase.Editor
             using var frame = new FrameAccumulator(width, height, cam);
             var clock = new ShotClock(shot, subject);
             float tau = u * clock.duration, t = clock.Scene(tau);
-            var pose = ShotEvaluator.Evaluate(shot, clock.subject, t, u, clock.start, clock.sceneEnd);
+            var pose = ShotEvaluator.Evaluate(shot, clock.subject, t, u, clock.start, clock.sceneEnd, width / (float)height);
             Apply(cam, dof, pose, subject.ArmLength);
             puppets.Pose(t, pose.position, clock.Impact(tau), shot.trail, clock.focus);
             if (float.TryParse(Arg("-debugAperture", ""), out float ap)) dof.aperture.Override(ap);

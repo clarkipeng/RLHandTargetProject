@@ -26,7 +26,7 @@ namespace Training
         [HideInInspector] public int armLayer, arenaIndex, arenaCount = 1;
         public const float Scale = 16f;            // the arm's length; observations are in arm lengths
         public const float FloorY = -15f;          // top of the ground, relative to the shoulder
-        public static readonly Vector3 PedestalTop = new Vector3(-9.9f, -9f, -9.9f); // under the hand of the start pose (PR #8: (-14, -9, 0), under the arm held straight out)
+        public static readonly Vector3 PedestalTop = new Vector3(-11.5f, -4f, -11.5f); // just under the hand of the start pose: the arm is counterbalanced, so it no longer sags onto the ball while exploring (PR #8: (-14, -9, 0))
         // Start pose, per drive in action units: the shoulder turned 45 degrees towards the targets, so a throw has little room
         // to accelerate unless the arm first swings back (ml/probe.py measures how far each kind of swing can reach).
         public static readonly float[] DefaultPose = { -0.5f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f };
@@ -105,6 +105,15 @@ namespace Training
         // Wind-up shaping (windup_bonus, default 0): paid at release for a backswing followed by a forward swing,
         // annealed to zero as the reach ramp gets to windup_bonus_end.
         float windupBonus, windupBonusEnd;
+        float touchShaping;                       // touch_shaping (default 0.06): see Potential
+        bool poseRelative;                        // pose_relative (default 0): see OnActionReceived
+        // start_held (default 0): every episode begins with the ball in the closed hand instead of on the pedestal. The ball is
+        // pinned at the grip point while the fingers are driven shut (HoldSetupSteps), then it is a free body held by friction
+        // alone, so the policy must keep its grip. Round 2 of the wind-up: with the capped arm the pedestal grasp collapsed into
+        // pressing the ball onto the pedestal's edge, which never became a lift (windup08: 0 lifts in 2.3M steps of lesson 1).
+        bool startHeld;
+        public const int HoldSetupSteps = 48;     // 0.2 s
+        float heldClose = -1f;                    // held_close: finger and thumb targets while the hand closes (-1: their lower limit)
         // Probe (probe = 1): the ball starts fixed in the hand (no grasp), the hand ignores it, nothing is released;
         // every step records how far a release at that instant would carry (drag-free flight). The actions come from
         // ml/probe.py, which searches open-loop swings with and without a backswing.
@@ -254,6 +263,10 @@ namespace Training
                 ball.maxDepenetrationVelocity = d;
             }
             EpisodeSeconds = Mathf.Clamp(p.GetWithDefault("episode_seconds", 10f), 2f, MaxEpisodeSeconds);
+            poseRelative = p.GetWithDefault("pose_relative", 0f) > 0.5f;   // off: the run that learned to grasp (windup05 -> windup08) used absolute targets
+            touchShaping = p.GetWithDefault("touch_shaping", 0.06f);
+            startHeld = p.GetWithDefault("start_held", 0f) > 0.5f;
+            heldClose = Mathf.Clamp(p.GetWithDefault("held_close", -1f), -1f, 1f);
             windupBonus = p.GetWithDefault("windup_bonus", 0f);
             windupBonusEnd = p.GetWithDefault("windup_bonus_end", 60f);
             probe = p.GetWithDefault("probe", 0f) > 0.5f;
@@ -350,9 +363,13 @@ namespace Training
         float Potential()
         {
             float reach = 1f - Mathf.Clamp01((Grip - ball.position).magnitude / 25f);
-            bool g = Grasped;
+            int n = HandContacts(out bool tp);
+            bool g = n >= 2 && tp;
             float lift = g && !OnPedestal ? Mathf.Clamp01(BallHeightAboveRest / 4f) : 0f;
-            return 0.2f * reach + 0.1f * (g ? 1f : 0f) + 0.1f * lift;
+            // touch: each finger on the ball pays a little before the pinch does. With the counterbalanced arm the hand
+            // hovers at the ball and never falls onto it, so without this the grasp has nothing to climb (PR #8: no touch term).
+            float touch = touchShaping * Mathf.Min(n, 3) / 3f;
+            return 0.2f * reach + touch + 0.1f * (g ? 1f : 0f) + 0.1f * lift;
         }
 
         public override void CollectObservations(VectorSensor sensor)
@@ -446,6 +463,12 @@ namespace Training
             for (int i = 0; i < action.Length; i++)
             {
                 float v = Mathf.Clamp(a[i], -1f, 1f);
+                // A drive with a start pose of its own (pose_<i>, e.g. the shoulder 45 degrees forward) takes actions relative to it:
+                // 0 holds the start pose and +-1 still reach the limits. Otherwise a fresh policy (actions near 0) would swing
+                // the arm straight out at once, away from the ball. The probe sends absolute targets.
+                float s = startPose[i];
+                if (poseRelative && !probe && s != 0f) v = v >= 0f ? s + v * (1f - s) : s + v * (1f + s);
+                if (startHeld && !probe && steps <= HoldSetupSteps && driveGroup[i] == ArmLimits.Groups - 1) v = heldClose;
                 jerk += (v - action[i]) * (v - action[i]);
                 action[i] = v;
             }
@@ -512,6 +535,25 @@ namespace Training
             }
         }
 
+        /// <summary>start_held: pin the ball at the grip and close the hand on it; let go of the pin when the setup ends.</summary>
+        void HoldSetup()
+        {
+            if (steps > HoldSetupSteps + 1) return;
+            if (steps <= HoldSetupSteps)
+            {
+                for (int i = 0; i < drives.Count; i++)
+                    if (driveGroup[i] == ArmLimits.Groups - 1) action[i] = smoothed[i] = heldClose;
+                ball.collisionDetectionMode = CollisionDetectionMode.Discrete;
+                ball.isKinematic = true;
+                ball.position = Grip;                // transforms follow the articulation from the first step on
+                ball.velocity = ball.angularVelocity = Vector3.zero;
+                return;
+            }
+            ball.isKinematic = false;
+            ball.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+            ball.velocity = ball.angularVelocity = Vector3.zero;
+        }
+
         void FixedUpdate()
         {
             if (bodies == null) return;
@@ -526,6 +568,7 @@ namespace Training
             Trace();
             if (enforceSpeed) ClampJointSpeeds();
             for (int i = 0; i < smoothed.Length; i++) smoothed[i] += (action[i] - smoothed[i]) * smoothing;
+            if (startHeld && !probe) HoldSetup();
             ApplyDrives();
             if (targetMotion > 0f) MoveTarget();
             if (probe) ProbeStep(); else Evaluate();
@@ -940,7 +983,7 @@ namespace Training
         //                                          shoulder elbow  wrist  fingers
         // Shoulder and elbow were 4000 and 2000 in a first round (run windup02): a direct swing still threw 65 out, so no wind-up
         // was needed; at half that, the same direct swing falls short of the far band (mean 47 on targets 52 out).
-        public static readonly float[] Torque =   { 400f,   200f,   80f,   150f };   // PR #8: 2000, 1000, 400, 150 (with arm gravity)
+        public static readonly float[] Torque =   { 500f,   250f,   100f,  150f };   // x0.25 of PR #8 (2000, 1000, 400, 150, with arm gravity); x0.2 could not lift the 2-kg ball
         public static readonly float[] Speed =    { 540f,   540f,   300f,  600f };
         public const float OldForceLimit = 100000f;
 
