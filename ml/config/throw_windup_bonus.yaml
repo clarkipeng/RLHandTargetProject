@@ -1,0 +1,58 @@
+# One curriculum for the whole task: grasp -> lift -> throw -> reach (targets ramp out from 26 to 72).
+# The arm is counterbalanced, torque- and speed-capped (ArmLimits in ThrowAgent.cs) and starts turned towards the targets:
+# ml/probe.py measures that a swing without a backswing carries at most ~54, so the far targets need a wind-up (docs/WINDUP.md).
+# The reach lesson's distance ramp runs in the player (ReachRamp in ThrowAgent.cs): +1.5 each time 64 frontier throws hit 60%.
+# Every lesson pays +1 for its own success on top of a shaping potential worth at most 0.4,
+# so "mean reward above ~1" means "most episodes succeed" in every lesson (see Assets/Training/Runtime/ThrowAgent.cs).
+behaviors:
+  Throw:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 4096
+      buffer_size: 65536
+      learning_rate: 0.0003
+      beta: 0.003
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: constant
+    network_settings:
+      normalize: true
+      hidden_units: 256
+      num_layers: 3
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+    keep_checkpoints: 200
+    checkpoint_interval: 1000000
+    max_steps: 300000000
+    time_horizon: 128
+    summary_freq: 100000
+    threaded: false
+
+environment_parameters:
+  eval_target: -1.0
+  # Variant 4: a backswing-then-forward bonus paid at release, annealed from windup_bonus at reach 26 to 0 at reach 60
+  # (ThrowAgent.cs), so the final policy is judged on hits alone.
+  windup_bonus: 0.3
+  windup_bonus_end: 60.0
+  lesson:
+    curriculum:
+      - name: grasp
+        completion_criteria: { measure: reward, behavior: Throw, signal_smoothing: true, min_lesson_length: 2000, threshold: 0.95 }
+        value: 0.0
+      - name: lift
+        completion_criteria: { measure: reward, behavior: Throw, signal_smoothing: true, min_lesson_length: 2000, threshold: 0.95 }
+        value: 1.0
+      - name: throw
+        completion_criteria: { measure: reward, behavior: Throw, signal_smoothing: true, min_lesson_length: 4000, threshold: 1.25 }
+        value: 2.0
+      - name: reach
+        value: 3.0
+
+engine_settings:
+  time_scale: 100
+  target_frame_rate: -1
+  capture_frame_rate: 0
+  no_graphics: true

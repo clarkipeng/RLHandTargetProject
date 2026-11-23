@@ -1,5 +1,6 @@
-# One curriculum for the whole task: grasp -> lift -> throw -> reach (targets ramp out from 26 to 56).
-# The arm is torque- and speed-capped (ArmLimits in ThrowAgent.cs), the wrist and fingers hardest, so far targets need a wind-up.
+# One curriculum for the whole task: grasp -> lift -> throw -> reach (targets ramp out from 26 to 72).
+# The arm is counterbalanced, torque- and speed-capped (ArmLimits in ThrowAgent.cs) and starts turned towards the targets:
+# ml/probe.py measures that a swing without a backswing carries at most ~54, so the far targets need a wind-up (docs/WINDUP.md).
 # The reach lesson's distance ramp runs in the player (ReachRamp in ThrowAgent.cs): +1.5 each time 64 frontier throws hit 60%.
 # Every lesson pays +1 for its own success on top of a shaping potential worth at most 0.4,
 # so "mean reward above ~1" means "most episodes succeed" in every lesson (see Assets/Training/Runtime/ThrowAgent.cs).
