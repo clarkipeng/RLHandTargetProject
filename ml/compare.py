@@ -44,7 +44,7 @@ if "--table" in sys.argv:
 
 rows = [r for r in rows if r["throw_rate"] >= 0.5]  # the chart compares policies that throw; a policy that mostly drops the ball is table-only
 BG, INK, DIM, GRID = "#0c0e12", "#e9e6e0", "#9aa0a8", "#262a31"
-COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500"]  # categorical slots 1-4, validated on BG
+COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#9a5cd0"]  # categorical slots 1-5
 plt.rcParams.update({"font.family": "DejaVu Sans", "text.color": INK, "axes.labelcolor": DIM, "xtick.color": DIM,
                      "ytick.color": DIM})
 panels = [("share", "share of release speed", 1.0, "{:.2f}"),

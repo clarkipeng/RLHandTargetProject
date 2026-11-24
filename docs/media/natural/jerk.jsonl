@@ -1,0 +1,5 @@
+{"ldlj_mean": -21.58, "episodes": 16, "tag": "current (windup13 40M)"}
+{"ldlj_mean": -21.8, "episodes": 14, "tag": "d: 80 ms filter"}
+{"ldlj_mean": -21.6, "episodes": 14, "tag": "b: shaping"}
+{"ldlj_mean": -22.44, "episodes": 12, "tag": "a: human limits (2M)"}
+{"ldlj_mean": -21.77, "episodes": 15, "tag": "e: no squirt"}

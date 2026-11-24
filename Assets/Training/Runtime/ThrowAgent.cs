@@ -120,6 +120,8 @@ namespace Training
         float actionRateCost = 1e-4f;             // action_rate_cost: per decision, times the summed squared change of the drive targets
         float effortCost;                         // effort_cost: per second of held ball, times the mean (shoulder..wrist torque / cap)^2
         float sequenceBonus;                      // sequence_bonus: at release, times the share of proximal-to-distal peak orderings
+        float squirtCost;                         // squirt_cost: at release, times the share of the ball's speed it had relative to
+                                                  // the palm (squeezed out by the fingers rather than carried by the arm)
         float heldClose = -1f;                    // held_close: finger and thumb targets while the hand closes (-1: their lower limit)
         // Probe (probe = 1): the ball starts fixed in the hand (no grasp), the hand ignores it, nothing is released;
         // every step records how far a release at that instant would carry (drag-free flight). The actions come from
@@ -243,6 +245,17 @@ namespace Training
             evalTarget = e == -2 ? (arenaIndex + evalEpisodes++ * arenaCount) % TargetSampler.HeldOutCount : e;
             if (evalTarget >= 0) lesson = TargetSampler.FinalLesson;
             ArmLimits.Read(p, driveGroup, torqueCap, speedCap);
+            // joint_lo_<i> / joint_hi_<i> (degrees): a narrower physical range for drive i, e.g. a human wrist. Actions still map
+            // over the prefab's range (a fine-tuned policy keeps its meaning); a target past the new limit presses on it.
+            for (int i = 0; i < drives.Count; i++)
+            {
+                var (b, axis, lo, hi) = drives[i];
+                float l = p.GetWithDefault("joint_lo_" + i, lo), h = p.GetWithDefault("joint_hi_" + i, hi);
+                var d = axis == 0 ? b.xDrive : axis == 1 ? b.yDrive : b.zDrive;
+                if (d.lowerLimit == l && d.upperLimit == h) continue;
+                d.lowerLimit = l; d.upperLimit = h;
+                if (axis == 0) b.xDrive = d; else if (axis == 1) b.yDrive = d; else b.zDrive = d;
+            }
             // arm_gravity 0: a counterbalanced arm (its links feel no gravity; the ball still does), so the capped torque goes
             // into moving the arm and the ball rather than holding the arm up.
             bool armGravity = p.GetWithDefault("arm_gravity", 0f) > 0.5f;
@@ -279,6 +292,7 @@ namespace Training
             actionRateCost = p.GetWithDefault("action_rate_cost", 1e-4f);
             effortCost = p.GetWithDefault("effort_cost", 0f);
             sequenceBonus = p.GetWithDefault("sequence_bonus", 0f);
+            squirtCost = p.GetWithDefault("squirt_cost", 0f);
             smoothing = Mathf.Clamp(p.GetWithDefault("action_smoothing", 0.25f), 0.01f, 1f); // per physics step: 0.25 ~ 13 ms, 0.05 ~ 80 ms
             windupBonus = p.GetWithDefault("windup_bonus", 0f);
             windupBonusEnd = p.GetWithDefault("windup_bonus_end", 60f);
@@ -702,6 +716,12 @@ namespace Training
                         int ordered = (peakStep[0] <= peakStep[1] ? 1 : 0) + (peakStep[1] <= peakStep[2] ? 1 : 0) + (peakStep[0] <= peakStep[2] ? 1 : 0);
                         AddReward(sequenceBonus * ordered / 3f);
                         Academy.Instance.StatsRecorder.Add("Task/Sequence", ordered / 3f);
+                    }
+                    if (squirtCost > 0f && evalTarget < 0 && lesson >= 2)
+                    {
+                        // A human hand releases a ball moving with it; this policy pops it out of its fingers (2/3 of the
+                        // release speed relative to the palm in windup13). Charge that share so the speed has to come from the arm.
+                        AddReward(-squirtCost * Mathf.Clamp01(share[3]));
                     }
                     if (lesson >= 2)
                     {

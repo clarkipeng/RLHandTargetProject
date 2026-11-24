@@ -2,7 +2,7 @@
 // Unity records the policy's real rollout headlessly (tools/showcase/render.sh) and exports it;
 // this page replays it in 3D in the showcase looks with cinematic camera cuts, and reloads
 // when current.json points at a newer take.
-//   ?look=art | minimal | cycle (default: cycle every 60 s)
+//   ?look=art | minimal | cycle (default: art, static; cycle alternates every 60 s)
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -11,7 +11,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const params = new URLSearchParams(location.search);
-const LOOK_MODE = params.get('look') || 'minimal';   // one static backdrop; ?look=cycle alternates the looks every minute
+const LOOK_MODE = params.get('look') || 'art';   // the hall (its fins and bullseyes give the throw a scale); ?look=minimal for the studio, ?look=cycle alternates every minute
 const START_AT = parseFloat(params.get('t') || '0'); // seconds into the take, for checking a moment
 const LOOK_SECONDS = 60;
 const POLL_SECONDS = 30;
