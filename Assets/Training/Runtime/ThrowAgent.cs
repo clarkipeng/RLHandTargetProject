@@ -243,6 +243,17 @@ namespace Training
             evalTarget = e == -2 ? (arenaIndex + evalEpisodes++ * arenaCount) % TargetSampler.HeldOutCount : e;
             if (evalTarget >= 0) lesson = TargetSampler.FinalLesson;
             ArmLimits.Read(p, driveGroup, torqueCap, speedCap);
+            // joint_lo_<i> / joint_hi_<i> (degrees): a narrower physical range for drive i, e.g. a human wrist. Actions still map
+            // over the prefab's range (a fine-tuned policy keeps its meaning); a target past the new limit presses on it.
+            for (int i = 0; i < drives.Count; i++)
+            {
+                var (b, axis, lo, hi) = drives[i];
+                float l = p.GetWithDefault("joint_lo_" + i, lo), h = p.GetWithDefault("joint_hi_" + i, hi);
+                var d = axis == 0 ? b.xDrive : axis == 1 ? b.yDrive : b.zDrive;
+                if (d.lowerLimit == l && d.upperLimit == h) continue;
+                d.lowerLimit = l; d.upperLimit = h;
+                if (axis == 0) b.xDrive = d; else if (axis == 1) b.yDrive = d; else b.zDrive = d;
+            }
             // arm_gravity 0: a counterbalanced arm (its links feel no gravity; the ball still does), so the capped torque goes
             // into moving the arm and the ball rather than holding the arm up.
             bool armGravity = p.GetWithDefault("arm_gravity", 0f) > 0.5f;

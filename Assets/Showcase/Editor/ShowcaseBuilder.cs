@@ -223,13 +223,14 @@ namespace Showcase.Editor
             SpotLight("Key", env, Hex("FFE6C4"), 46f, new Vector3(-1.6f, 4.2f, -2.2f), new Vector3(0.7f, 0.7f, 0f), 68f, size: 0.18f, range: 12f, shadows: true);
             // Kicker: a cool spot low from behind, carving the arm's far edge out of the dark.
             SpotLight("Kicker", env, Hex("9EC6FF"), 26f, new Vector3(2.2f, 1.4f, 3.2f), new Vector3(0.2f, 0.8f, 0f), 45f, size: 0.12f, range: 12f, shadows: true);
-            // Top: a faint cool sky so the shadow side keeps its shape.
-            var top = DirectionalLight("Top", stage.transform, Hex("C8D6F0"), 0.35f, new Vector3(80f, 20f, 0f), shadows: true, softDegrees: 8f);
+            // Top: a cool sky that lights the arm from above whichever way it throws (the key and kicker are fixed in the
+            // hall, so a throw to the side leaves the arm out of their pools); bright enough that the graphite parts read.
+            var top = DirectionalLight("Top", stage.transform, Hex("C8D6F0"), 1.1f, new Vector3(80f, 20f, 0f), shadows: true, softDegrees: 8f);
             top.shadowStrength = 0.6f;
             Probe(stage, 1f);
             Post(profile);
             MakeCamera(fogColor);
-            Ambient(Hex("262B34"), Hex("1C1F24"), Hex("111113"));
+            Ambient(Hex("3A4150"), Hex("2A2E36"), Hex("16171A"));
             RenderSettings.fogColor = fogColor;
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
