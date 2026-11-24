@@ -262,6 +262,11 @@ namespace Training
             // into moving the arm and the ball rather than holding the arm up.
             bool armGravity = p.GetWithDefault("arm_gravity", 0f) > 0.5f;
             foreach (var b in bodies) b.useGravity = armGravity;
+            // gravity_scale (default 1): the world's gravity is 9.81 x this. The arm is 20.7 units long, so at 1 a unit is ~3.6 cm and
+            // the ball falls at 1/27 of real gravity for an arm this size (a slow, floaty flight). ball_mass (default 2): set it to
+            // 2 / gravity_scale to keep the ball's weight, which the capped shoulder can barely hold out at arm's length, unchanged.
+            Physics.gravity = new Vector3(0f, -9.81f * Mathf.Max(0.1f, p.GetWithDefault("gravity_scale", 1f)), 0f);
+            ball.mass = Mathf.Max(0.02f, p.GetWithDefault("ball_mass", 2f));
             float enforce = p.GetWithDefault("speed_enforce", 1f);
             enforceSpeed = enforce > 0.5f && torqueCap.Any(t => t > 0f);
             governor = enforce > 1.5f && enforceSpeed;   // speed_enforce 2: the in-step governor too (it costs the PR #8 policy its grasp)
