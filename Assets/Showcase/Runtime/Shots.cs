@@ -179,6 +179,13 @@ namespace Showcase
             }
             // The ball's pedestal: a subject clamped to one throw returns the resting ball for any time before it.
             if (s.Ball(a - 1e3f, out var rest)) { pts.Add(rest + Vector3.up * 0.05f * L); pts.Add(rest - Vector3.up * 0.4f * L); }
+            // The stage mark on the floor around the column (0.75 arm lengths in the Art look): whole, never cut at the frame's edge.
+            Vector3 foot = s.ArmBase(a) - Vector3.up * 1.0f * L;
+            for (int i = 0; i < 16; i++)
+            {
+                float ang = i * Mathf.PI / 8f;
+                pts.Add(foot + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * 0.8f * L);
+            }
             Vector3 right = Vector3.Cross(Vector3.up, fwd).normalized, up = Vector3.Cross(fwd, right);
             float r = 0.12f * L; // the target's face and the ball's radius
             foreach (var d in new[] { right, -right, up, -up }) pts.Add(target + d * r);
@@ -199,7 +206,12 @@ namespace Showcase
                 float depth = Vector3.Dot(q, fwd);
                 need = Mathf.Max(need, Mathf.Abs(Vector3.Dot(q, right)) / th - depth, Mathf.Abs(Vector3.Dot(q, up)) / tv - depth);
             }
-            lookAt = c; dist = Mathf.Max(need, 0.5f * L);
+            dist = Mathf.Max(need, 0.5f * L);
+            // A throw is wider than it is tall, so the frame has room to spare vertically. Keep the floor margin as tight as
+            // the side margins and give the rest to the hall above, so no band of empty floor runs under the stage.
+            float spare = tv / fill * dist - 0.5f * (y1 - y0) / fill;
+            if (spare > 0f) c += up * spare;
+            lookAt = c;
         }
 
         /// <summary>Box-filtered position over +-halfWindow seconds; keeps cameras from jittering with the physics.</summary>

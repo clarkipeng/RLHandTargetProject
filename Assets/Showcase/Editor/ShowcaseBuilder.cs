@@ -166,13 +166,17 @@ namespace Showcase.Editor
             look.target = Lit(A + "Target", Hex("E0402F", 0.2f), smoothness: 0.9f, transparent: true);
             look.prop = Lit(A + "BallStand", Hex("2A2C30"), smoothness: 0.58f, metallic: 0.65f);
             look.targetHit = Lit(A + "TargetHit", Hex("FFE2A8", 0.55f), smoothness: 0.9f, emission: Hex("FFC468") * 1.7f, transparent: true);
+            // Additive: a hit glows over the target instead of dimming it to a see-through dark disc against the dark hall.
+            look.targetHit.SetFloat("_Blend", 2f);
+            look.targetHit.SetFloat("_DstBlend", (float)BlendMode.One);
+            look.targetHit.SetFloat("_DstBlendAlpha", (float)BlendMode.One);
             look.targetDressing = BullseyePrefab(A, look.targetHit, Hex("D93A2B"), Hex("EEE9DF"), Hex("2A2C30"), glowA: 0.45f, glowB: 0.12f);
             look.trail = Additive(A + "Trail", Hex("1FC3DC") * 3.5f);
             look.spark = Lit(A + "Spark", Hex("FFE2A8"), smoothness: 0.5f, emission: Hex("FFC468") * 7f);
             EditorUtility.SetDirty(look);
 
-            var fogColor = Hex("171B22");
-            var profile = BuildVolumeProfile("Art", exposure: 0.4f, contrast: 18f, saturation: 6f, bloomThreshold: 0.95f, bloomIntensity: 0.65f,
+            var fogColor = Hex("343B47"); // a lit blue-grey haze: the hall reads as a space, not a black void
+            var profile = BuildVolumeProfile("Art", exposure: 0.75f, contrast: 18f, saturation: 6f, bloomThreshold: 0.95f, bloomIntensity: 0.65f,
                 vignette: 0.32f, shadowsTint: new Vector4(0.93f, 0.98f, 1.08f, 0f), highlightsTint: new Vector4(1.05f, 1f, 0.94f, 0f));
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             var stage = NewStage(training.floorY);
@@ -184,13 +188,13 @@ namespace Showcase.Editor
             stage.environment = env;
 
             var floor = MeshObject("Floor", env, SaveMesh(DiscMesh(), "Disc"),
-                Lit(A + "Floor", Hex("16171A"), smoothness: 0.8f), castShadows: false);
+                Lit(A + "Floor", Hex("3A3D44"), smoothness: 0.8f), castShadows: false);
             floor.transform.localScale = Vector3.one * 60f;
 
             // A ring of tall fins, each with a light strip on its inner face: they frame every angle,
             // fall away into the haze, and give the background its bokeh.
             var cube = Resources.GetBuiltinResource<Mesh>("Cube.fbx");
-            var finMat = Lit(A + "Fin", Hex("2C2E33"), smoothness: 0.45f, metallic: 0.3f);
+            var finMat = Lit(A + "Fin", Hex("4A4E56"), smoothness: 0.45f, metallic: 0.3f);
             var stripMat = Lit(A + "Strip", Hex("0A0A0A"), smoothness: 0.3f, emission: Hex("C9D8F5") * 1.1f);
             var warmStripMat = Lit(A + "WarmStrip", Hex("0A0A0A"), smoothness: 0.3f, emission: Hex("FFC98A") * 1.5f);
             const int fins = 44;
@@ -220,17 +224,17 @@ namespace Showcase.Editor
             stage.pedestalRadius = 0.12f;
 
             // Key: a warm spot from high front-left, a pool of light on the plinth and the arm; soft (0.35 arm lengths across).
-            SpotLight("Key", env, Hex("FFE6C4"), 46f, new Vector3(-1.6f, 4.2f, -2.2f), new Vector3(0.7f, 0.7f, 0f), 68f, size: 0.18f, range: 12f, shadows: true);
+            SpotLight("Key", env, Hex("FFE6C4"), 60f, new Vector3(-1.6f, 4.2f, -2.2f), new Vector3(0.7f, 0.7f, 0f), 84f, size: 0.18f, range: 12f, shadows: true);
             // Kicker: a cool spot low from behind, carving the arm's far edge out of the dark.
             SpotLight("Kicker", env, Hex("9EC6FF"), 26f, new Vector3(2.2f, 1.4f, 3.2f), new Vector3(0.2f, 0.8f, 0f), 45f, size: 0.12f, range: 12f, shadows: true);
             // Top: a cool sky that lights the arm from above whichever way it throws (the key and kicker are fixed in the
             // hall, so a throw to the side leaves the arm out of their pools); bright enough that the graphite parts read.
-            var top = DirectionalLight("Top", stage.transform, Hex("C8D6F0"), 1.1f, new Vector3(80f, 20f, 0f), shadows: true, softDegrees: 8f);
+            var top = DirectionalLight("Top", stage.transform, Hex("C8D6F0"), 1.7f, new Vector3(80f, 20f, 0f), shadows: true, softDegrees: 8f);
             top.shadowStrength = 0.6f;
             Probe(stage, 1f);
             Post(profile);
             MakeCamera(fogColor);
-            Ambient(Hex("3A4150"), Hex("2A2E36"), Hex("16171A"));
+            Ambient(Hex("5C667C"), Hex("474D59"), Hex("2E3036"));
             RenderSettings.fogColor = fogColor;
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;

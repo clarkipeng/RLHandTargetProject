@@ -206,6 +206,7 @@ namespace Showcase
             public Transform dressing;   // turned to face the camera
             public Renderer[] glow;      // what lights up on a hit
             public Renderer[] shells;    // the expanding shockwave on a hit
+            public bool hidden;          // never drawn (a prop sunk to the floor)
         }
 
         readonly Take take;
@@ -231,6 +232,11 @@ namespace Showcase
             root.SetParent(parent, false);
             DropNestedBalls(take);
             foreach (var a in take.actors) puppets[a.id] = Build(a);
+            // The held start lowers the ball's pedestal to the floor, out of the swing's way: in the sim it is only a collider
+            // nothing touches, and drawn it is a stray slab on the floor beside the plinth.
+            foreach (var a in take.actors)
+                if (a.kind == ActorKind.Prop && floorY is float fy && a.frames.All(f => f.All(q => q.position.y + 0.5f * Mathf.Abs(q.scale.y) < fy + 1f)))
+                    puppets[a.id].hidden = true;
             BuildEffects();
         }
 
@@ -463,7 +469,7 @@ namespace Showcase
             {
                 var p = puppets[a.id];
                 bool lingering = a.kind == ActorKind.Target && a.hit && step > a.LastStep && step <= a.LastStep + hitLinger / take.stepSeconds;
-                bool visible = a.AliveAt(step) || lingering;
+                bool visible = (a.AliveAt(step) || lingering) && !p.hidden;
                 if (p.go.activeSelf != visible) p.go.SetActive(visible);
                 if (!visible) continue;
                 for (int i = 0; i < p.parts.Length; i++)
