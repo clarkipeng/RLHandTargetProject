@@ -31,11 +31,12 @@ Half of every lesson's targets are still drawn anywhere from 22 out, so at least
 
 The probe behind the 92 ceiling (comment in the config) found that a direct swing of this arm cannot reach past 72 and that 92 takes a wind-up.
 The policy's far throws do wind up (52° backswing) but still swing from the shoulder with the elbow held, and no term in the reward asks for the elbow to extend into the release.
-A farther target alone does not supply that gradient: the reward is hit or miss at the target, and a near-miss at 85 pays nothing more than a throw that drops at 60.
+A farther target alone does not supply that gradient.
+The reward already pays for a near miss (0.5·exp(−gap/8) at release from the predicted flight, 0.25·exp(−gap/8) at the end from the closest approach), so a throw that falls 7 short of a 92-out target earns about 0.3 more than one that drops 30 short.
+The gradient toward farther throws is there; the policy did not find a motion that follows it past about 80 (far throws carry 68 on average, 97 at most).
 
 ## What would
 
-- A distance-graded reward for the far band (pay for carry toward the target, not only the hit), so a longer throw is better than a short one before it can hit.
 - A release-time term on elbow extension speed, the joint a human throw adds last.
 - A longer run with the near half of the lesson dropped, so the training steps go to the frontier.
 
