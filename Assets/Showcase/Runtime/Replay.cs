@@ -48,7 +48,7 @@ namespace Showcase
         {
             if (balls.Length == 0 || targets.Length == 0) return;
             var starts = take.episodeStarts.Count > 0 ? take.episodeStarts : new List<int> { 0 };
-            var recorded = new HashSet<int>(take.hitSteps);
+            int recorded = take.hitSteps.Count;
             for (int i = 0; i < starts.Count; i++)
             {
                 int start = starts[i], end = (i + 1 < starts.Count ? starts[i + 1] : take.stepCount) - 1;
@@ -68,13 +68,14 @@ namespace Showcase
                 bool hit = contactDistance > 0f
                     ? Vector3.Distance(BallAt(end), target) <= contactDistance
                     : take.hitSteps.Any(h => h >= start && h <= end);
-                hit |= recorded.Any(h => h >= start && h <= end);
+                // With a contact distance the geometry decides: the recorded flag also fires on throws that end short of
+                // the target (a 70-out lob that landed 14 units below it was flagged), so it is not trusted over it.
                 throws.Add(new Throw { start = start, release = release, end = end, hit = hit && release < end });
             }
             // Hit anchors are the inferred hits: the last step before the episode resets.
             var hits = throws.Where(th => th.hit).Select(th => th.end).ToList();
-            if (hits.Count >= take.hitSteps.Count) { take.hitSteps.Clear(); take.hitSteps.AddRange(hits); }
-            Debug.Log($"[showcase] {throws.Count} throws, {hits.Count} hits (the recorder caught {recorded.Count})");
+            if (contactDistance > 0f || hits.Count >= take.hitSteps.Count) { take.hitSteps.Clear(); take.hitSteps.AddRange(hits); }
+            Debug.Log($"[showcase] {throws.Count} throws, {hits.Count} hits (the recorder flagged {recorded})");
         }
 
         /// <summary>The throw a shot starting at time t follows: the first hit at or after t, else the throw under way.</summary>
