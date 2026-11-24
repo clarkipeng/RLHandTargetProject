@@ -1,4 +1,5 @@
-# Natural-motion control: the held ramp fine-tuned from windup13 (40M) for 6M steps with no change, so each variant is compared against the same extra training; docs/NATURAL.md.
+# Natural-motion variant (e), no squirt: the held ramp fine-tuned from windup13 (40M) for 6M steps with a cost on the share of the
+# release speed the ball had relative to the palm (squeezed out by the fingers instead of carried by the arm); docs/NATURAL.md.
 # One curriculum for the whole task: grasp -> lift -> throw -> reach (targets ramp out from 26 to 72).
 # The arm is counterbalanced, torque- and speed-capped (ArmLimits in ThrowAgent.cs) and starts turned towards the targets:
 # ml/probe.py measures that a swing without a backswing carries at most ~60 (500/250/100 torque, forward start pose), so the far targets need a wind-up (docs/WINDUP.md).
@@ -43,6 +44,7 @@ environment_parameters:
   # The ramp only, from 18 out, aiming from the first step: windup10's throw lesson (anywhere 10-34 out) taught one 16-unit
   # throw, and the ramp's default start (26) then left it at 1% hits for 2M steps.
   reach_start: 60.0
+  squirt_cost: 1.0
   # Actions relative to the start pose (the shoulder 45 degrees forward, the fingers closed on the ball): 0 holds it.
   pose_relative: 1.0
   # The ramp advances at 45% frontier hits (default 60%): with the action noise of a fresh policy about a third of the
