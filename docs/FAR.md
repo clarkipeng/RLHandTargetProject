@@ -27,7 +27,7 @@ The elbow still does not extend at release (share −0.01), so the throw is stil
 
 `ReachRamp` moves the frontier 1.5 units out each time 64 frontier throws hit at the threshold, here lowered to 30% (`ml/config/far_squirt.yaml`).
 The frontier went from 70 to 78 in the first 5.5M steps and to 79.7 by 8M, with frontier throws hitting 15 to 25%, so the policy never trained on 88 to 92.
-Half of every lesson's targets are still drawn anywhere from 22 out, so most of the 8M steps went to distances it already hit.
+Half of every lesson's targets are still drawn anywhere from 22 out, so at least half of the 8M steps went to distances it already hit.
 
 The probe behind the 92 ceiling (comment in the config) found that a direct swing of this arm cannot reach past 72 and that 92 takes a wind-up.
 The policy's far throws do wind up (52° backswing) but still swing from the shoulder with the elbow held, and no term in the reward asks for the elbow to extend into the release.
