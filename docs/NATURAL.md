@@ -79,3 +79,9 @@ What is still not human, in order of how much it shows:
 Every showcase shot now has a locked camera (`move` false, the default since PR #10), and the live view no longer drifts.
 The live view and these clips are back on the Art look, the hall with light fins and bullseye targets that give the throw a scale; the Top light is brighter (0.35 → 1.1) and the ambient lifted, because the fixed key light misses the arm on throws to the side.
 `?look=minimal` on the live view shows the studio look, and `?look=cycle` alternates.
+
+### Site clips
+
+The website's hover clips and cover are re-rendered from a 120 s take of the no-squirt policy in this look: [rl-sheet.jpg](media/site/rl-sheet.jpg) has frames of all three clips.
+Making them turned up a renderer bug: `TakeSubject` counted a throw as a hit when the take's recorded hit flag fired during it, even when the ball never reached the target, and flashed the impact on it ([false-hit.jpg](media/site/false-hit.jpg): a 70-out lob passing 14 units below its target).
+With a contact distance (every render) the geometry alone now decides, and the recorded flags no longer override it: the take's renderer count went from 32 hits to 23, against the 24 the evaluation scored.
