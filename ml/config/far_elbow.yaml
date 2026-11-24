@@ -1,0 +1,72 @@
+# Elbow variant of the farther objective (docs/FAR.md): far_squirt.yaml plus elbow_bonus, fine-tuned from nat_squirt like far_squirt,
+# so the two differ only in that term. far_squirt's far throws swing from the shoulder with the elbow bending at release
+# (share -0.01); this pays up to 0.5 at release for the elbow extending into it (full at a 0.25 share of the ball's speed).
+# Farther objective (PI, 2026-11-23): no-squirt (natural_squirt.yaml) fine-tuned from nat_squirt with the ramp pushed out
+# from 70 to 92, the probe's ceiling for a free wind-up (ml/probe.py: a direct swing carries ~60, a backswing up to 92.8), so the
+# far targets can only be hit with a fuller wind-up and the whole arm; docs/FAR.md.
+# Natural-motion variant (e), no squirt: the held ramp fine-tuned from windup13 (40M) for 6M steps with a cost on the share of the
+# release speed the ball had relative to the palm (squeezed out by the fingers instead of carried by the arm); docs/NATURAL.md.
+# One curriculum for the whole task: grasp -> lift -> throw -> reach (here the ramp alone, from 70 to 92).
+# The arm is counterbalanced, torque- and speed-capped (ArmLimits in ThrowAgent.cs) and starts turned towards the targets:
+# ml/probe.py measures that a swing without a backswing carries at most ~60 (500/250/100 torque, forward start pose), so the far targets need a wind-up (docs/WINDUP.md).
+# throw_held.yaml: throw.yaml with the ball starting in the hand (round 2 of the wind-up, docs/WINDUP.md).
+# The reach lesson's distance ramp runs in the player (ReachRamp in ThrowAgent.cs): +1.5 each time 64 frontier throws hit 60%.
+# Every lesson pays +1 for its own success on top of a shaping potential worth at most 0.4,
+# so "mean reward above ~1" means "most episodes succeed" in every lesson (see Assets/Training/Runtime/ThrowAgent.cs).
+behaviors:
+  Throw:
+    trainer_type: ppo
+    hyperparameters:
+      batch_size: 4096
+      buffer_size: 65536
+      learning_rate: 0.0003
+      beta: 0.0002   # windup13 ran 0.001 to 7M; 0.003 kept the action noise near its initial sigma (~0.87 after 9M steps of windup10-11)
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: constant
+    network_settings:
+      normalize: true
+      hidden_units: 256
+      num_layers: 3
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+    keep_checkpoints: 200
+    checkpoint_interval: 1000000
+    max_steps: 8000000
+    time_horizon: 128
+    summary_freq: 100000
+    threaded: false
+
+environment_parameters:
+  eval_target: -1.0
+  # Held start (start_held, ThrowAgent.cs): the ball begins closed in the hand, the pedestal is lowered out of the swing's way,
+  # and the curriculum skips grasp and lift: windup08 never got from the pedestal grasp to a lift on the capped arm.
+  start_held: 1.0
+  held_close: -1.0
+  ped_y: -14.5
+  # The ramp only, here from 70 out (half the targets still anywhere from 22), aiming from the first step: windup10's throw lesson (anywhere 10-34 out) taught one 16-unit
+  # throw, and the ramp's default start (26) then left it at 1% hits for 2M steps.
+  reach_start: 70.0
+  # Past 72 a direct swing cannot reach: the ramp to 92 asks for the wind-up the probe needed there.
+  reach_max: 92.0
+  squirt_cost: 1.0
+  elbow_bonus: 0.5
+  # Actions relative to the start pose (the shoulder 45 degrees forward, the fingers closed on the ball): 0 holds it.
+  pose_relative: 1.0
+  # The ramp advances at 45% frontier hits (default 60%): with the action noise of a fresh policy about a third of the
+  # training throws are let go early, so 60% stalled the ramp (windup13: +0.7 reach per 1M steps) while deterministic
+  # evaluation throws 97% of the time.
+  # Here 30%: nat_squirt ended at 71 out with its frontier throws hitting 33%, under the 45% that would move the ramp on.
+  reach_threshold: 0.3
+  # The speed clamp leaves room for the gain one physics step adds (passive whip took the wrist to 390 deg/s against 300).
+  speed_predict: 1.0
+  lesson: 3.0
+
+engine_settings:
+  time_scale: 100
+  target_frame_rate: -1
+  capture_frame_rate: 0
+  no_graphics: true

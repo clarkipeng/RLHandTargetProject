@@ -122,6 +122,8 @@ namespace Training
         float sequenceBonus;                      // sequence_bonus: at release, times the share of proximal-to-distal peak orderings
         float squirtCost;                         // squirt_cost: at release, times the share of the ball's speed it had relative to
                                                   // the palm (squeezed out by the fingers rather than carried by the arm)
+        float elbowBonus;                         // elbow_bonus: at release, times the elbow's share of the ball's speed (full at 0.25):
+                                                  // a human throw extends the elbow into the release; this policy bends it
         float heldClose = -1f;                    // held_close: finger and thumb targets while the hand closes (-1: their lower limit)
         // Probe (probe = 1): the ball starts fixed in the hand (no grasp), the hand ignores it, nothing is released;
         // every step records how far a release at that instant would carry (drag-free flight). The actions come from
@@ -293,6 +295,7 @@ namespace Training
             effortCost = p.GetWithDefault("effort_cost", 0f);
             sequenceBonus = p.GetWithDefault("sequence_bonus", 0f);
             squirtCost = p.GetWithDefault("squirt_cost", 0f);
+            elbowBonus = p.GetWithDefault("elbow_bonus", 0f);
             smoothing = Mathf.Clamp(p.GetWithDefault("action_smoothing", 0.25f), 0.01f, 1f); // per physics step: 0.25 ~ 13 ms, 0.05 ~ 80 ms
             windupBonus = p.GetWithDefault("windup_bonus", 0f);
             windupBonusEnd = p.GetWithDefault("windup_bonus_end", 60f);
@@ -716,6 +719,13 @@ namespace Training
                         int ordered = (peakStep[0] <= peakStep[1] ? 1 : 0) + (peakStep[1] <= peakStep[2] ? 1 : 0) + (peakStep[0] <= peakStep[2] ? 1 : 0);
                         AddReward(sequenceBonus * ordered / 3f);
                         Academy.Instance.StatsRecorder.Add("Task/Sequence", ordered / 3f);
+                    }
+                    if (elbowBonus > 0f && evalTarget < 0 && lesson >= 2)
+                    {
+                        // Elbow extension into the release (FAR.md: the far throws swing from the shoulder with the elbow bending).
+                        float ext = Mathf.Clamp01(share[1] / 0.25f);
+                        AddReward(elbowBonus * ext);
+                        Academy.Instance.StatsRecorder.Add("Task/ElbowShare", share[1]);
                     }
                     if (squirtCost > 0f && evalTarget < 0 && lesson >= 2)
                     {
