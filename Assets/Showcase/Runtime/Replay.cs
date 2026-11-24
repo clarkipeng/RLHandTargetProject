@@ -206,6 +206,7 @@ namespace Showcase
             public Transform dressing;   // turned to face the camera
             public Renderer[] glow;      // what lights up on a hit
             public Renderer[] shells;    // the expanding shockwave on a hit
+            public bool hidden;          // never drawn (a prop sunk to the floor)
         }
 
         readonly Take take;
@@ -219,14 +220,23 @@ namespace Showcase
         /// <summary>Seconds a hit target lingers, glowing, while its shockwave expands and fades.</summary>
         public float hitLinger = 0.7f;
 
+        /// <summary>Top of the floor the shockwave must stay above (the stage's, when there is one).</summary>
+        readonly float? floorY;
+
         public ReplayPuppets(Take take, ShowcaseLook look, Transform parent)
         {
             this.take = take;
             this.look = look;
+            floorY = UnityEngine.Object.FindObjectOfType<Stage>()?.floorY;
             root = new GameObject("ReplayPuppets").transform;
             root.SetParent(parent, false);
             DropNestedBalls(take);
             foreach (var a in take.actors) puppets[a.id] = Build(a);
+            // The held start lowers the ball's pedestal to the floor, out of the swing's way: in the sim it is only a collider
+            // nothing touches, and drawn it is a stray slab on the floor beside the plinth.
+            foreach (var a in take.actors)
+                if (a.kind == ActorKind.Prop && floorY is float fy && a.frames.All(f => f.All(q => q.position.y + 0.5f * Mathf.Abs(q.scale.y) < fy + 1f)))
+                    puppets[a.id].hidden = true;
             BuildEffects();
         }
 
@@ -459,7 +469,7 @@ namespace Showcase
             {
                 var p = puppets[a.id];
                 bool lingering = a.kind == ActorKind.Target && a.hit && step > a.LastStep && step <= a.LastStep + hitLinger / take.stepSeconds;
-                bool visible = a.AliveAt(step) || lingering;
+                bool visible = (a.AliveAt(step) || lingering) && !p.hidden;
                 if (p.go.activeSelf != visible) p.go.SetActive(visible);
                 if (!visible) continue;
                 for (int i = 0; i < p.parts.Length; i++)
@@ -540,8 +550,13 @@ namespace Showcase
                     r.SetPropertyBlock(block, m);
                 }
             }
+            // Nothing of the hit sinks into the floor: a low camera would show it cut off flat.
+            float room = floorY is float fy ? (p.parts[0].position.y - fy) / targetRadius : float.PositiveInfinity;
             if (active)
-                foreach (var part in p.parts) part.localScale *= 1f + 0.12f * Mathf.Sin(Mathf.PI * Mathf.Min(1f, 2.5f * k));
+            {
+                float pop = Mathf.Min(1f + 0.12f * Mathf.Sin(Mathf.PI * Mathf.Min(1f, 2.5f * k)), Mathf.Max(1f, room));
+                foreach (var part in p.parts) part.localScale *= pop;
+            }
 
             float grow = 1f - Mathf.Pow(1f - k, 3f); // fast out, settling
             float fade = Mathf.Pow(1f - k, 2f);
@@ -549,7 +564,10 @@ namespace Showcase
             {
                 shell.enabled = active && k < 1f;
                 if (!shell.enabled) continue;
-                shell.transform.localScale = Vector3.one * (1f + 1.6f * grow);
+                // The ring's radius at scale 1, in target radii (the dressing is scaled to the target's radius).
+                var mesh = shell.GetComponent<MeshFilter>().sharedMesh;
+                float ring = mesh.bounds.extents.x * shell.transform.parent.lossyScale.x / targetRadius;
+                shell.transform.localScale = Vector3.one * Mathf.Min(1f + 1.6f * grow, Mathf.Max(1f, 0.97f * room / ring));
                 var c = look.targetHit.GetColor(BaseColor); c.a *= fade * 0.6f;
                 block.Clear();
                 block.SetColor(BaseColor, c);
