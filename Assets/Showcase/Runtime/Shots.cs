@@ -58,6 +58,10 @@ namespace Showcase
         public float hold = 0f;        // seconds the frame freezes on the hit while the impact plays out;
                                        // when set, the shot lasts until the hit plus the hold, not 'duration'
         public float trail = 0f;       // seconds of the ball's flight drawn as a glowing trail (0: none)
+        public string follow = "hit"; // hit: the shot follows the first throw that hits at or after its start; own: the throw
+                                       // under way at its start, hit or miss (its trail is drawn either way)
+        public Vector3 eye, look;      // when they differ: a fixed world camera at eye looking at look, so shots of
+                                       // different takes share one camera (the type and the framing fields are then unused)
     }
 
     [Serializable]
@@ -90,6 +94,15 @@ namespace Showcase
         /// <summary>Camera pose of a shot at u in [0,1] across it, with t the subject time.</summary>
         public static CameraPose Evaluate(Shot shot, ISubject s, float t, float u, float shotStart, float shotEnd, float aspect = 16f / 9f)
         {
+            if (shot.eye != shot.look)
+                return new CameraPose
+                {
+                    position = shot.eye,
+                    rotation = Quaternion.LookRotation(shot.look - shot.eye, Vector3.up),
+                    fov = shot.fov,
+                    aperture = shot.aperture,
+                    focusDistance = Vector3.Distance(shot.eye, shot.look),
+                };
             float L = Mathf.Max(s.ArmLength, 0.01f);
             // Locked: evaluate once, at the shot's middle, on positions averaged over the whole shot; the pose is then the
             // same on every frame of the shot.

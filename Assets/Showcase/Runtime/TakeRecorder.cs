@@ -9,7 +9,7 @@ namespace Showcase
     /// <summary>
     /// Records every physics step of a policy rollout into a <see cref="Take"/>.
     /// It needs no scene edits: start any build or play session with
-    ///   -showcaseTake path/to/run.take [-showcaseSeconds 120] [-showcasePolicy name]
+    ///   -showcaseTake path/to/run.take [-showcaseSeconds 120] [-showcasePolicy name] [-showcaseSeed N]
     /// and it attaches itself, records, saves and quits.
     /// It finds actors by component, so it follows whatever the training scene spawns:
     /// the arm (SimCharController), balls (ProjectileScript) and targets (tag "target").
@@ -36,6 +36,7 @@ namespace Showcase
             recorder.outputPath = path;
             if (float.TryParse(Arg("-showcaseSeconds"), out float s)) recorder.seconds = s;
             recorder.take.policy = Arg("-showcasePolicy") ?? "";
+            if (int.TryParse(Arg("-showcaseSeed"), out int seed)) UnityEngine.Random.InitState(seed); // same spawns for every policy
             DontDestroyOnLoad(recorder.gameObject);
             Debug.Log($"[showcase] recording {recorder.seconds}s to {path}");
         }

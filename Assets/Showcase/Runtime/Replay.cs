@@ -64,10 +64,23 @@ namespace Showcase
                 float away = 1.35f * hold[hold.Count / 2];
                 int release = grasp;
                 while (release < end && Palm(release) <= away) release++;
-                Target(end * take.stepSeconds, out var target);
-                bool hit = contactDistance > 0f
-                    ? Vector3.Distance(BallAt(end), target) <= contactDistance
-                    : take.hitSteps.Any(h => h >= start && h <= end);
+                bool hit;
+                if (contactDistance > 0f && !(Latest(balls, end * take.stepSeconds, out _) && Target(end * take.stepSeconds, out _)))
+                {
+                    // The scene removed the ball before the episode ended (Clark's Playground waits for the next launch):
+                    // the hit is the first step after the release where the ball touches its target, and the throw ends there.
+                    hit = false;
+                    for (int k = release; k <= end && !hit; k++)
+                        if (Latest(balls, k * take.stepSeconds, out var b) && Target(k * take.stepSeconds, out var tk)
+                            && Vector3.Distance(b, tk) <= contactDistance) { hit = true; end = k; }
+                }
+                else
+                {
+                    Target(end * take.stepSeconds, out var target);
+                    hit = contactDistance > 0f
+                        ? Vector3.Distance(BallAt(end), target) <= contactDistance
+                        : take.hitSteps.Any(h => h >= start && h <= end);
+                }
                 // With a contact distance the geometry decides: the recorded flag also fires on throws that end short of
                 // the target (a 70-out lob that landed 14 units below it was flagged), so it is not trusted over it.
                 throws.Add(new Throw { start = start, release = release, end = end, hit = hit && release < end });
@@ -84,6 +97,14 @@ namespace Showcase
             float step = t / take.stepSeconds;
             foreach (var th in throws) if (th.hit && th.end >= step) return th;
             foreach (var th in throws) if (th.end >= step) return th;
+            return null;
+        }
+
+        /// <summary>The throw under way at t, hit or miss.</summary>
+        public Throw? ThrowAt(float t)
+        {
+            float step = t / take.stepSeconds;
+            foreach (var th in throws) if (th.start <= step && step <= th.end) return th;
             return null;
         }
 
@@ -142,7 +163,7 @@ namespace Showcase
         public ShotClock(Shot shot, TakeSubject take)
         {
             start = take.AnchorTime(shot);
-            focus = take.ThrowFor(start);
+            focus = shot.follow == "own" ? take.ThrowAt(start) : take.ThrowFor(start);
             float release = -1f, hit = -1f, from = 0f, to = float.MaxValue;
             if (focus is TakeSubject.Throw th)
             {
