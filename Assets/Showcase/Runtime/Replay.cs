@@ -410,6 +410,9 @@ namespace Showcase
         /// <summary>Seconds the impact of a frozen hit plays: glow, pop, shockwave and sparks.</summary>
         public float impactSeconds = 1.1f;
 
+        /// <summary>How loud the hit reads, 0 to 1: scales the glow, pop, shockwave and sparks together (1: the original).</summary>
+        public float hitStrength = 1f;
+
         LineRenderer trailLine;
         Transform[] sparks;
         Vector3[] sparkDirs;
@@ -532,7 +535,7 @@ namespace Showcase
                 var dir = (sparkDirs[i] + 0.9f * bias).normalized;
                 float travel = sparkSpeeds[i] * 1.6f * targetRadius * (1f - Mathf.Exp(-5f * k));
                 sp.position = contact + dir * travel + Vector3.down * 0.35f * targetRadius * k * k;
-                sp.localScale = Vector3.one * (0.42f * ballRadius * sparkSpeeds[i] * Mathf.Pow(1f - k, 1.5f));
+                sp.localScale = Vector3.one * (0.42f * hitStrength * ballRadius * sparkSpeeds[i] * Mathf.Pow(1f - k, 1.5f));
             }
         }
 
@@ -557,7 +560,7 @@ namespace Showcase
         /// </summary>
         void Flash(Puppet p, float k, bool active)
         {
-            float glow = active ? Mathf.Exp(-4f * k) : 0f;
+            float glow = active ? hitStrength * Mathf.Exp(-4f * k) : 0f;
             var hitGlow = look.targetHit.GetColor(EmissionColor);
             foreach (var r in p.glow)
             {
@@ -575,7 +578,7 @@ namespace Showcase
             float room = floorY is float fy ? (p.parts[0].position.y - fy) / targetRadius : float.PositiveInfinity;
             if (active)
             {
-                float pop = Mathf.Min(1f + 0.12f * Mathf.Sin(Mathf.PI * Mathf.Min(1f, 2.5f * k)), Mathf.Max(1f, room));
+                float pop = Mathf.Min(1f + 0.12f * hitStrength * Mathf.Sin(Mathf.PI * Mathf.Min(1f, 2.5f * k)), Mathf.Max(1f, room));
                 foreach (var part in p.parts) part.localScale *= pop;
             }
 
@@ -588,11 +591,11 @@ namespace Showcase
                 // The ring's radius at scale 1, in target radii (the dressing is scaled to the target's radius).
                 var mesh = shell.GetComponent<MeshFilter>().sharedMesh;
                 float ring = mesh.bounds.extents.x * shell.transform.parent.lossyScale.x / targetRadius;
-                shell.transform.localScale = Vector3.one * Mathf.Min(1f + 1.6f * grow, Mathf.Max(1f, 0.97f * room / ring));
+                shell.transform.localScale = Vector3.one * Mathf.Min(1f + 1.6f * hitStrength * grow, Mathf.Max(1f, 0.97f * room / ring));
                 var c = look.targetHit.GetColor(BaseColor); c.a *= fade * 0.6f;
                 block.Clear();
                 block.SetColor(BaseColor, c);
-                block.SetColor(EmissionColor, hitGlow * (0.6f * fade));
+                block.SetColor(EmissionColor, hitGlow * (0.6f * hitStrength * fade));
                 shell.SetPropertyBlock(block);
             }
         }

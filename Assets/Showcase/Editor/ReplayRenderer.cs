@@ -94,6 +94,7 @@ namespace Showcase.Editor
         {
             var (look, cam, dof, subject, stage) = Setup(take, lookName);
             using var puppets = new ReplayPuppets(take, look, null);
+            if (float.TryParse(Arg("-hit", ""), out float hit)) puppets.hitStrength = hit;
             using var frame = new FrameAccumulator(reel.width, reel.height, cam);
 
             Process ffmpeg = videoPath != null ? StartEncoder(videoPath, reel) : null;
@@ -158,6 +159,7 @@ namespace Showcase.Editor
         {
             var (look, cam, dof, subject, stage) = Setup(take, lookName);
             using var puppets = new ReplayPuppets(take, look, null);
+            if (float.TryParse(Arg("-hit", ""), out float hit)) puppets.hitStrength = hit;
             using var frame = new FrameAccumulator(width, height, cam);
             var clock = new ShotClock(shot, subject);
             float tau = u * clock.duration, t = clock.Scene(tau);
