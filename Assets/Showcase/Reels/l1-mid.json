@@ -1,0 +1,30 @@
+{
+  "width": 2400,
+  "height": 1600,
+  "fps": 60,
+  "subframes": 16,
+  "shutter": 0.5,
+  "shots": [
+    {
+      "type": "Wide",
+      "anchor": "time",
+      "fov": 24,
+      "aperture": 8.0,
+      "trail": 0.6,
+      "follow": "own",
+      "eye": {
+        "x": -103.364,
+        "y": -18.38,
+        "z": -13.296
+      },
+      "look": {
+        "x": -5.481,
+        "y": -2.876,
+        "z": -14.348
+      },
+      "name": "mid78",
+      "offset": 246.16,
+      "duration": 1.75
+    }
+  ]
+}
