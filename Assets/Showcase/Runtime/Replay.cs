@@ -64,10 +64,23 @@ namespace Showcase
                 float away = 1.35f * hold[hold.Count / 2];
                 int release = grasp;
                 while (release < end && Palm(release) <= away) release++;
-                Target(end * take.stepSeconds, out var target);
-                bool hit = contactDistance > 0f
-                    ? Vector3.Distance(BallAt(end), target) <= contactDistance
-                    : take.hitSteps.Any(h => h >= start && h <= end);
+                bool hit;
+                if (contactDistance > 0f && !(Latest(balls, end * take.stepSeconds, out _) && Target(end * take.stepSeconds, out _)))
+                {
+                    // The scene removed the ball before the episode ended (Clark's Playground waits for the next launch):
+                    // the hit is the first step after the release where the ball touches its target, and the throw ends there.
+                    hit = false;
+                    for (int k = release; k <= end && !hit; k++)
+                        if (Latest(balls, k * take.stepSeconds, out var b) && Target(k * take.stepSeconds, out var tk)
+                            && Vector3.Distance(b, tk) <= contactDistance) { hit = true; end = k; }
+                }
+                else
+                {
+                    Target(end * take.stepSeconds, out var target);
+                    hit = contactDistance > 0f
+                        ? Vector3.Distance(BallAt(end), target) <= contactDistance
+                        : take.hitSteps.Any(h => h >= start && h <= end);
+                }
                 // With a contact distance the geometry decides: the recorded flag also fires on throws that end short of
                 // the target (a 70-out lob that landed 14 units below it was flagged), so it is not trusted over it.
                 throws.Add(new Throw { start = start, release = release, end = end, hit = hit && release < end });
@@ -84,6 +97,14 @@ namespace Showcase
             float step = t / take.stepSeconds;
             foreach (var th in throws) if (th.hit && th.end >= step) return th;
             foreach (var th in throws) if (th.end >= step) return th;
+            return null;
+        }
+
+        /// <summary>The throw under way at t, hit or miss.</summary>
+        public Throw? ThrowAt(float t)
+        {
+            float step = t / take.stepSeconds;
+            foreach (var th in throws) if (th.start <= step && step <= th.end) return th;
             return null;
         }
 
@@ -142,7 +163,7 @@ namespace Showcase
         public ShotClock(Shot shot, TakeSubject take)
         {
             start = take.AnchorTime(shot);
-            focus = take.ThrowFor(start);
+            focus = shot.follow == "own" ? take.ThrowAt(start) : take.ThrowFor(start);
             float release = -1f, hit = -1f, from = 0f, to = float.MaxValue;
             if (focus is TakeSubject.Throw th)
             {
@@ -389,6 +410,9 @@ namespace Showcase
         /// <summary>Seconds the impact of a frozen hit plays: glow, pop, shockwave and sparks.</summary>
         public float impactSeconds = 1.1f;
 
+        /// <summary>How loud the hit reads, 0 to 1: scales the glow, pop, shockwave and sparks together (1: the original).</summary>
+        public float hitStrength = 1f;
+
         LineRenderer trailLine;
         Transform[] sparks;
         Vector3[] sparkDirs;
@@ -511,7 +535,7 @@ namespace Showcase
                 var dir = (sparkDirs[i] + 0.9f * bias).normalized;
                 float travel = sparkSpeeds[i] * 1.6f * targetRadius * (1f - Mathf.Exp(-5f * k));
                 sp.position = contact + dir * travel + Vector3.down * 0.35f * targetRadius * k * k;
-                sp.localScale = Vector3.one * (0.42f * ballRadius * sparkSpeeds[i] * Mathf.Pow(1f - k, 1.5f));
+                sp.localScale = Vector3.one * (0.42f * hitStrength * ballRadius * sparkSpeeds[i] * Mathf.Pow(1f - k, 1.5f));
             }
         }
 
@@ -536,7 +560,7 @@ namespace Showcase
         /// </summary>
         void Flash(Puppet p, float k, bool active)
         {
-            float glow = active ? Mathf.Exp(-4f * k) : 0f;
+            float glow = active ? hitStrength * Mathf.Exp(-4f * k) : 0f;
             var hitGlow = look.targetHit.GetColor(EmissionColor);
             foreach (var r in p.glow)
             {
@@ -554,7 +578,7 @@ namespace Showcase
             float room = floorY is float fy ? (p.parts[0].position.y - fy) / targetRadius : float.PositiveInfinity;
             if (active)
             {
-                float pop = Mathf.Min(1f + 0.12f * Mathf.Sin(Mathf.PI * Mathf.Min(1f, 2.5f * k)), Mathf.Max(1f, room));
+                float pop = Mathf.Min(1f + 0.12f * hitStrength * Mathf.Sin(Mathf.PI * Mathf.Min(1f, 2.5f * k)), Mathf.Max(1f, room));
                 foreach (var part in p.parts) part.localScale *= pop;
             }
 
@@ -567,11 +591,11 @@ namespace Showcase
                 // The ring's radius at scale 1, in target radii (the dressing is scaled to the target's radius).
                 var mesh = shell.GetComponent<MeshFilter>().sharedMesh;
                 float ring = mesh.bounds.extents.x * shell.transform.parent.lossyScale.x / targetRadius;
-                shell.transform.localScale = Vector3.one * Mathf.Min(1f + 1.6f * grow, Mathf.Max(1f, 0.97f * room / ring));
+                shell.transform.localScale = Vector3.one * Mathf.Min(1f + 1.6f * hitStrength * grow, Mathf.Max(1f, 0.97f * room / ring));
                 var c = look.targetHit.GetColor(BaseColor); c.a *= fade * 0.6f;
                 block.Clear();
                 block.SetColor(BaseColor, c);
-                block.SetColor(EmissionColor, hitGlow * (0.6f * fade));
+                block.SetColor(EmissionColor, hitGlow * (0.6f * hitStrength * fade));
                 shell.SetPropertyBlock(block);
             }
         }

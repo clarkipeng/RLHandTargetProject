@@ -54,12 +54,16 @@ namespace Showcase.Editor
                 ? 1.06f * (ReplayPuppets.WorldRadius(look.ballPrefab, ballActor) + ReplayPuppets.WorldRadius(look.targetPrefab, targetActor)) : 0f;
             var subject = new TakeSubject(take, contact);
 
-            var bounds = new Bounds(subject.ArmBase(0), Vector3.zero);
-            foreach (var a in take.actors)
+            // -stageTake fits the stage to another take, so renders of different takes share one set.
+            string stagePath = Arg("-stageTake", "");
+            var stageTake = stagePath != "" ? Take.Load(stagePath) : take;
+            var stageSubject = stageTake == take ? subject : new TakeSubject(stageTake, contact);
+            var bounds = new Bounds(stageSubject.ArmBase(0), Vector3.zero);
+            foreach (var a in stageTake.actors)
                 for (int f = 0; f < a.frames.Count; f += 8)
                     bounds.Encapsulate(a.frames[f][0].position);
             var stage = UnityEngine.Object.FindObjectOfType<Stage>();
-            stage.Fit(subject.ArmBase(0), bounds, subject.ArmLength);
+            stage.Fit(stageSubject.ArmBase(0), bounds, stageSubject.ArmLength);
             Debug.Log($"[showcase] look {lookName}; take: {take.Duration:F1}s, {take.hitSteps.Count} hits, {take.episodeStarts.Count} episodes, arm length {subject.ArmLength:F2}, action bounds {bounds}");
             return (look, cam, dof, subject, stage);
         }
@@ -90,6 +94,7 @@ namespace Showcase.Editor
         {
             var (look, cam, dof, subject, stage) = Setup(take, lookName);
             using var puppets = new ReplayPuppets(take, look, null);
+            if (float.TryParse(Arg("-hit", ""), out float hit)) puppets.hitStrength = hit;
             using var frame = new FrameAccumulator(reel.width, reel.height, cam);
 
             Process ffmpeg = videoPath != null ? StartEncoder(videoPath, reel) : null;
@@ -105,6 +110,8 @@ namespace Showcase.Editor
                 int frames = Mathf.RoundToInt(clock.duration * reel.fps);
                 Debug.Log($"[showcase] shot '{shot.name}' ({shot.Type}) {start:F2}s..{end:F2}s of the take, {frames} frames" +
                           (clock.impactAt >= 0f ? $", hit frozen at {clock.impactAt:F2}s" : ""));
+                var still = ShotEvaluator.Evaluate(shot, clock.subject, start, 0f, start, end, reel.width / (float)reel.height);
+                Debug.Log($"[showcase] shot '{shot.name}' camera eye {still.position:F3} look {still.position + still.rotation * Vector3.forward * still.focusDistance:F3}");
                 for (int f = 0; f < frames; f++)
                 {
                     float tau = f / (float)reel.fps;
@@ -152,6 +159,7 @@ namespace Showcase.Editor
         {
             var (look, cam, dof, subject, stage) = Setup(take, lookName);
             using var puppets = new ReplayPuppets(take, look, null);
+            if (float.TryParse(Arg("-hit", ""), out float hit)) puppets.hitStrength = hit;
             using var frame = new FrameAccumulator(width, height, cam);
             var clock = new ShotClock(shot, subject);
             float tau = u * clock.duration, t = clock.Scene(tau);
