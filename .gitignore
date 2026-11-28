@@ -106,3 +106,11 @@ Assets/Showcase/Policies.meta
 /ml/.venv/
 /ml/results/
 ml/gpu/.venv/
+
+# ML-Agents writes run timers here, including the editor command line (with a Unity session token)
+/Assets/ML-Agents/Timers/
+/Assets/ML-Agents/Timers.meta
+
+# ML-Agents run timers record the editor command line, including a Unity session token
+/Assets/ML-Agents/
+/Assets/ML-Agents.meta
